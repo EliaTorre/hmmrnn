@@ -55,7 +55,6 @@ class SinkhornSolver(nn.Module):
                         
             if mean_diff.item() < threshold:
                 break
-   
     
         # Transport plan pi = diag(a)*K*diag(b)
         K = self._log_boltzmann_kernel(u, v, C)

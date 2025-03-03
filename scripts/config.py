@@ -10,7 +10,9 @@ class DefaultConfig:
         "states": 3,
         "outputs": 3,
         "stay_prob": 0.95,
-        "emission_method": "gaussian"  # Added emission_method parameter
+        "target_prob": 0.05,
+        "transition_method": "target_prob",
+        "emission_method": "gaussian"
     }
     
     # Data Generation Parameters
@@ -37,13 +39,6 @@ class DefaultConfig:
         "init": True  # Initialize hidden state with noise
     }
     
-    # Paths
-    PATHS = {
-        "figs_path": "figs/",
-        "data_path": "data/",
-        "models_path": "models/"
-    }
-    
     @classmethod
     def get_config(cls):
         """Get the full configuration as a dictionary"""
@@ -52,7 +47,9 @@ class DefaultConfig:
             "states": cls.HMM["states"],
             "outputs": cls.HMM["outputs"],
             "stay_prob": cls.HMM["stay_prob"],
-            "emission_method": cls.HMM["emission_method"],  # Added emission_method
+            "target_prob": cls.HMM["target_prob"],
+            "transition_method": cls.HMM["transition_method"],
+            "emission_method": cls.HMM["emission_method"],
             
             # Data config
             "num_seq": cls.DATA["num_seq"],
@@ -70,24 +67,21 @@ class DefaultConfig:
             "learning_rates": cls.TRAINING["learning_rates"],
             "tau": cls.TRAINING["tau"],
             "grad_clip": cls.TRAINING["grad_clip"],
-            "init": cls.TRAINING["init"],
-            
-            # Paths
-            "figs_path": cls.PATHS["figs_path"],
-            "data_path": cls.PATHS["data_path"],
-            "models_path": cls.PATHS["models_path"]
+            "init": cls.TRAINING["init"]
         }
         return config
 
-
-class HMMSmall(DefaultConfig):
-    """Configuration for a small HMM experiment (3 states, 3 outputs)"""
+class HMMTwo_inter(DefaultConfig):
+    """Configuration for a small HMM experiment (2 states, 3 outputs)"""
     HMM = {
-        "states": 3,
+        "states": 2,
         "outputs": 3,
         "stay_prob": 0.95,
-        "emission_method": "gaussian"  # Added emission_method parameter
+        "target_prob": 0.01,
+        "transition_method": "target_prob",
+        "emission_method": "linear"
     }
+
     TRAINING = {
         "batch_size": 4096,
         "epochs": 500,  # Reduced epochs for faster execution
@@ -97,78 +91,107 @@ class HMMSmall(DefaultConfig):
         "init": True
     }
 
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 20
+    }
 
-class HMMMedium(DefaultConfig):
-    """Configuration for a medium HMM experiment (10 states, 3 outputs)"""
+class HMMThree_inter(DefaultConfig):
+    """Configuration for a small HMM experiment (3 states, 3 outputs)"""
     HMM = {
-        "states": 10,
+        "states": 3,
         "outputs": 3,
         "stay_prob": 0.95,
-        "emission_method": "gaussian"  # Added emission_method parameter
-    }
-
-
-class HMMLarge(DefaultConfig):
-    """Configuration for a large HMM experiment (20 states, 3 outputs)"""
-    HMM = {
-        "states": 20,
-        "outputs": 3,
-        "stay_prob": 0.95,
-        "emission_method": "gaussian"  # Added emission_method parameter
-    }
-
-
-class HMMComplexOutput(DefaultConfig):
-    """Configuration for an HMM with more complex outputs (10 states, 5 outputs)"""
-    HMM = {
-        "states": 10,
-        "outputs": 5,
-        "stay_prob": 0.95,
-        "emission_method": "gaussian"  # Added emission_method parameter
-    }
-
-
-class HMMStayProb80(DefaultConfig):
-    """Configuration with low stay probability (80%)"""
-    HMM = {
-        "states": 10,
-        "outputs": 3,
-        "stay_prob": 0.80,
-        "emission_method": "gaussian"
-    }
-
-
-class HMMStayProb99(DefaultConfig):
-    """Configuration with high stay probability (99%)"""
-    HMM = {
-        "states": 10,
-        "outputs": 3,
-        "stay_prob": 0.99,
-        "emission_method": "gaussian"
-    }
-
-
-class HMMLinearEmission(DefaultConfig):
-    """Configuration with linear emission method"""
-    HMM = {
-        "states": 10,
-        "outputs": 3,
-        "stay_prob": 0.95,
+        "target_prob": 0.01,
+        "transition_method": "target_prob",
         "emission_method": "linear"
     }
 
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 500,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
 
-class HMMLowHidden(DefaultConfig):
-    """Configuration with smaller hidden layer"""
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 20
+    }
+
+class HMMFour_inter(DefaultConfig):
+    """Configuration for a small HMM experiment (4 states, 3 outputs)"""
     HMM = {
-        "states": 10,
+        "states": 4,
         "outputs": 3,
         "stay_prob": 0.95,
+        "target_prob": 0.01,
+        "transition_method": "target_prob",
+        "emission_method": "linear"
+    }
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 500,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 20
+    }
+
+class HMMFive_inter(DefaultConfig):
+    """Configuration for a small HMM experiment (5 states, 3 outputs)"""
+    HMM = {
+        "states": 5,
+        "outputs": 3,
+        "stay_prob": 0.95,
+        "target_prob": 0.01,
+        "transition_method": "target_prob",
+        "emission_method": "linear"
+    }
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 500,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 20
+    }
+
+class HMMThree_fully(DefaultConfig):
+    """Configuration for a small HMM experiment (3 states, 3 outputs)"""
+    HMM = {
+        "states": 3,
+        "outputs": 3,
+        "stay_prob": 0.99,
+        "target_prob": 0.01,
+        "transition_method": "fully",
         "emission_method": "gaussian"
     }
-    RNN = {
-        "input_size": 100,
-        "hidden_size": 50,  # Small hidden layer
-        "num_layers": 1,
-        "biased": [False, False]
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 700,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 30
     }
