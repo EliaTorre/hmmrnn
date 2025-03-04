@@ -1,3 +1,5 @@
+import numpy as np
+
 """
 Configuration module for HMM-RNN experiments.
 """
@@ -11,8 +13,10 @@ class DefaultConfig:
         "outputs": 3,
         "stay_prob": 0.95,
         "target_prob": 0.05,
-        "transition_method": "target_prob",
-        "emission_method": "gaussian"
+        "transition_method": "stay_prob",
+        "emission_method": "gaussian",
+        "custom_transition_matrix": None,
+        "custom_emission_matrix": None 
     }
     
     # Data Generation Parameters
@@ -50,6 +54,8 @@ class DefaultConfig:
             "target_prob": cls.HMM["target_prob"],
             "transition_method": cls.HMM["transition_method"],
             "emission_method": cls.HMM["emission_method"],
+            "custom_transition_matrix": cls.HMM.get("custom_transition_matrix", None),
+            "custom_emission_matrix": cls.HMM.get("custom_emission_matrix", None),
             
             # Data config
             "num_seq": cls.DATA["num_seq"],
@@ -194,4 +200,183 @@ class HMMThree_fully(DefaultConfig):
     DATA = {
         "num_seq": 30000,
         "seq_len": 30
+    }
+
+class HMMTwo_RG(DefaultConfig):
+    """Configuration with custom transition and emission matrices"""
+    
+    # Hand-written matrices (example values)
+    # custom_transition = np.array([
+    #     [0.95, 0.05],
+    #     [0.05, 0.95]
+    # ])
+    
+    custom_emission = np.array([
+        [1, 0, 0],
+        [0, 0, 1],
+    ])
+    
+    HMM = {
+        "states": 2,
+        "outputs": 3,
+        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
+        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
+        "transition_method": "stay_prob",  
+        "emission_method": "custom",
+        #"custom_transition_matrix": custom_transition,
+        "custom_emission_matrix": custom_emission
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 100
+    }
+
+class HMMThree_RGR(DefaultConfig):
+    """Configuration with custom transition and emission matrices"""
+
+    # Hand-written matrices (example values)
+    # custom_transition = np.array([
+    #     [0.95, 0.05, 0],
+    #     [0.025, 0.95, 0.025],
+    #     [0, 0.05, 0.95]
+    # ])
+
+    custom_emission = np.array([
+        [1, 0, 0],
+        [0, 0, 1],
+        [1, 0, 0]
+    ])
+
+    HMM = {
+        "states": 3,
+        "outputs": 3,
+        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
+        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
+        "transition_method": "stay_prob",  
+        "emission_method": "custom",
+        #"custom_transition_matrix": custom_transition,
+        "custom_emission_matrix": custom_emission
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 100
+    }
+
+class HMMThree_RGB(DefaultConfig):
+    """Configuration with custom transition and emission matrices"""
+
+    # Hand-written matrices (example values)
+    # custom_transition = np.array([
+    #     [0.95, 0.05, 0],
+    #     [0.025, 0.95, 0.025],
+    #     [0, 0.05, 0.95]
+    # ])
+
+    custom_emission = np.array([
+        [1, 0, 0],
+        [0, 0, 1],
+        [0, 1, 0]
+    ])
+
+    HMM = {
+        "states": 3,
+        "outputs": 3,
+        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
+        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
+        "transition_method": "stay_prob",  
+        "emission_method": "custom",
+        #"custom_transition_matrix": custom_transition,
+        "custom_emission_matrix": custom_emission
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 100
+    }
+
+class HMMFour_RGRB(DefaultConfig):
+    """Configuration with custom transition and emission matrices"""
+
+    # Hand-written matrices (example values)
+    # custom_transition = np.array([
+    #     [0.95, 0.05, 0, 0],
+    #     [0.025, 0.95, 0.025],
+    #     [0.025, 0.5, 0.95], 
+    # ])
+
+    custom_emission = np.array([
+        [1, 0, 0],
+        [0, 0, 1],
+        [1, 0, 0],
+        [0, 1, 0]
+    ])
+
+    HMM = {
+        "states": 4,
+        "outputs": 3,
+        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
+        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
+        "transition_method": "stay_prob",  
+        "emission_method": "custom",
+        #"custom_transition_matrix": custom_transition,
+        "custom_emission_matrix": custom_emission
+    }
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 700,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 100
+    }
+
+class HMMFive_RGRBG(DefaultConfig):
+    """Configuration with custom transition and emission matrices"""
+
+    # Hand-written matrices (example values)
+    # custom_transition = np.array([
+    #     [0.95, 0.05, 0, 0],
+    #     [0.025, 0.95, 0.025],
+    #     [0.025, 0.5, 0.95], 
+    # ])
+
+    custom_emission = np.array([
+        [1, 0, 0],
+        [0, 0, 1],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+    ])
+
+    HMM = {
+        "states": 5,
+        "outputs": 3,
+        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
+        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
+        "transition_method": "stay_prob",  
+        "emission_method": "custom",
+        #"custom_transition_matrix": custom_transition,
+        "custom_emission_matrix": custom_emission
+    }
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 700,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 100
     }

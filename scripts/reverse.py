@@ -112,13 +112,14 @@ class Reverse:
         
         return fig, ax
     
-    def plot_3d(self, num_points=1000, save_path=None):
+    def plot_3d(self, num_points=1000, save_path=None, cone_scale=0.1):
         """
-        Create an interactive 3D plot of the PCA-projected hidden states.
+        Create an interactive 3D plot of the PCA-projected hidden states with directional cones.
         
         Args:
             num_points (int): Number of points to plot
             save_path (str, optional): Path to save the plot
+            cone_scale (float): Scale factor for cone size (default: 0.1)
             
         Returns:
             plotly.graph_objects.Figure: Plotly figure
@@ -128,17 +129,38 @@ class Reverse:
         # Draw lines for transitions
         for i in range(min(num_points, len(self.pca_hiddens)-1)):
             color = self.colors_dict[self.rnn_outputs[i]]
+            
+            # Current and next point coordinates
             x0, y0, z0 = self.pca_hiddens[i, 0], self.pca_hiddens[i, 1], self.pca_hiddens[i, 2]
             x1, y1, z1 = self.pca_hiddens[i + 1, 0], self.pca_hiddens[i + 1, 1], self.pca_hiddens[i + 1, 2]
             
+            # Direction vector for cone
+            u = x1 - x0
+            v = y1 - y0
+            w = z1 - z0
+            
+            # Add lines connecting points
             fig.add_trace(go.Scatter3d(
                 x=[x0, x1],
                 y=[y0, y1],
                 z=[z0, z1],
-                mode='lines+markers',
-                line=dict(color=color, width=4),
-                marker=dict(size=4, color=color),
+                mode='lines',
+                line=dict(color=color, width=2),
                 showlegend=False
+            ))
+            
+            # Add cone at the starting point pointing to the next point
+            fig.add_trace(go.Cone(
+                x=[x0],
+                y=[y0],
+                z=[z0],
+                u=[u * cone_scale],
+                v=[v * cone_scale],
+                w=[w * cone_scale],
+                colorscale=[[0, color], [1, color]],
+                showscale=False,
+                sizemode="absolute",
+                anchor="tail"
             ))
         
         fig.update_layout(

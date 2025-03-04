@@ -8,7 +8,8 @@ class HMM:
     Class for generating and managing Hidden Markov Model sequences.
     """
     def __init__(self, states, outputs, stay_prob=0.95, target_prob=0.05, 
-                 transition_method='target_prob', emission_method='linear'):
+             transition_method='target_prob', emission_method='linear',
+             custom_transition_matrix=None, custom_emission_matrix=None):
         """
         Initialize the HMM generator.
         
@@ -17,8 +18,10 @@ class HMM:
             outputs (int): Number of possible output symbols
             stay_prob (float): Probability of staying in the same state
             target_prob (float): Target probability for transitions (when using target_prob method)
-            transition_method (str): Method for generating transition matrix ('stay_prob' or 'target_prob')
+            transition_method (str): Method for generating transition matrix ('stay_prob', 'target_prob', or 'fully')
             emission_method (str): Method for generating emission probabilities ('linear' or 'gaussian')
+            custom_transition_matrix (np.ndarray, optional): Custom transition matrix to use instead of generating one
+            custom_emission_matrix (np.ndarray, optional): Custom emission matrix to use instead of generating one
         """
         self.states = states
         self.outputs = outputs
@@ -26,11 +29,24 @@ class HMM:
         self.target_prob = target_prob
         self.transition_method = transition_method
         self.emission_method = emission_method
+        self.custom_transition_matrix = custom_transition_matrix
+        self.custom_emission_matrix = custom_emission_matrix
         
         # Generate model parameters
         self.start_probabilities = self.gen_start_prob()
-        self.transition_matrix = self.gen_trans_mat()
-        self.emission_probabilities = self.gen_emission_prob()
+        
+        # Use custom matrices if provided, otherwise generate them
+        if self.custom_transition_matrix is not None:
+            print("Using custom transition matrix")
+            self.transition_matrix = self.custom_transition_matrix
+        else:
+            self.transition_matrix = self.gen_trans_mat()
+            
+        if self.custom_emission_matrix is not None:
+            print("Using custom emission matrix")
+            self.emission_probabilities = self.custom_emission_matrix
+        else:
+            self.emission_probabilities = self.gen_emission_prob()
     
     def gen_start_prob(self):
         """Generate uniform starting probabilities for HMM states"""

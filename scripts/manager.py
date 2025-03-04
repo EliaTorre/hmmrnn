@@ -138,7 +138,9 @@ class Manager:
             stay_prob=self.config["stay_prob"],
             target_prob=self.config.get("target_prob", 0.05),
             transition_method=self.config.get("transition_method", "target_prob"),
-            emission_method=self.config["emission_method"]
+            emission_method=self.config["emission_method"],
+            custom_transition_matrix=self.config.get("custom_transition_matrix", None),
+            custom_emission_matrix=self.config.get("custom_emission_matrix", None)
         )
         
         rnn = RNN(

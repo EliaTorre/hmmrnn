@@ -10,7 +10,7 @@ class RNN(nn.Module):
     """
     A recurrent neural network model for sequence modeling.
     """
-    def __init__(self, input_size, hidden_size, num_layers, output_size, biased=[False, False]):
+    def __init__(self, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False]):
         """
         Initialize the RNN model.
         
@@ -89,7 +89,7 @@ class RNN(nn.Module):
             epochs (int): Number of training epochs
             grad_clip (float): Gradient clipping threshold
             init (bool): Whether to initialize hidden state with noise
-            criterion: Loss function (if None, uses MSE)
+            criterion: Loss function
             verbose (bool): Whether to print progress
             
         Returns:
@@ -103,12 +103,11 @@ class RNN(nn.Module):
         val_seq = val_seq.to(self.device)
         
         # Define loss and optimizer
-        criterion = geomloss.SamplesLoss(blur=0.2)  # Sinkhorn Divergence
-        optimizer = optim.Adam(self.parameters(), lr=lr)
+        criterion = geomloss.SamplesLoss(blur=0.3)  # Sinkhorn Divergence
+        optimizer = optim.Adam(self.parameters(), lr=lr, betas=(0.9, 0.9))
         
         # Reset training history
-        self.train_losses = []
-        self.val_losses = []
+        self.train_losses, self.val_losses = [], []
         self.best_loss = float('inf')
         
         # For each epoch
@@ -214,7 +213,6 @@ class RNN(nn.Module):
         # Generate hidden states, logits, and outputs
         for t in range(1, time_steps):
             x = torch.normal(mean=0, std=1, size=(self.input_size,)).float().to(self.device)
-            
             if dynamics_mode == 'full':
                 h[t] = torch.relu(x @ ih.T + h[t-1] @ hh.T)
             elif dynamics_mode == 'recurrence_only':
