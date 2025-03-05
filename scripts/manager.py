@@ -530,7 +530,7 @@ class Manager:
         
         return all_results
 
-    def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None, plot=True, plot_traj=True, num_traj=10):
+    def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None, plot=True, plot_traj=True, num_traj=10, plot_unique=True):
         """
         Find fixed points in the latent space of the trained RNN and optionally plot them.
 
