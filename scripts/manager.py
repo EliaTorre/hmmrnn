@@ -13,7 +13,7 @@ from scripts.rnn import RNN
 from scripts.test import Test
 from scripts.reverse import Reverse
 import scripts.config
-from fixed-point-finder.FixedPointFinderTorch import FixedPointFinderTorch
+from fixed_point_finder.FixedPointFinderTorch import FixedPointFinderTorch
 
 class Manager:
     """
@@ -529,73 +529,75 @@ class Manager:
         
         return all_results
 
-def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None):
-    """
-    Find fixed points in the latent space of the trained RNN.
+    def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None):
+        """
+        Find fixed points in the latent space of the trained RNN.
 
-    Args:
-        num_initial_states (int): Number of initial states to use for optimization (default: 100).
-        seq_len (int, optional): Length of sequences to generate for initial states.
-                                 If None, uses config["seq_len"].
-        dynamics_mode (str): Dynamics mode for sequence generation ('recurrence_only' for autonomous dynamics).
-        model_path (str, optional): Path to a specific model.pth file to load.
-                                    If None, loads the most recent model from the experiment's models directory.
+        Args:
+            num_initial_states (int): Number of initial states to use for optimization (default: 100).
+            seq_len (int, optional): Length of sequences to generate for initial states.
+                                    If None, uses config["seq_len"].
+            dynamics_mode (str): Dynamics mode for sequence generation ('recurrence_only' for autonomous dynamics).
+            model_path (str, optional): Path to a specific model.pth file to load.
+                                        If None, loads the most recent model from the experiment's models directory.
 
-    Returns:
-        FixedPoints: Object containing the identified fixed points and metadata.
+        Returns:
+            FixedPoints: Object containing the identified fixed points and metadata.
 
-    Raises:
-        FileNotFoundError: If no trained model is found or the specified model_path does not exist.
-    """
-    # Use config sequence length if not specified
-    if seq_len is None:
-        seq_len = self.config["seq_len"]
+        Raises:
+            FileNotFoundError: If no trained model is found or the specified model_path does not exist.
+        """
+        # Use config sequence length if not specified
+        if seq_len is None:
+            seq_len = self.config["seq_len"]
 
-    # Determine the model file to load
-    if model_path:
-        model_file = Path(model_path)
-        if not model_file.exists():
-            raise FileNotFoundError(f"Specified model path does not exist: {model_path}")
-    else:
-        # Load the most recent trained RNN model from the experiment's models directory
-        model_files = list(self.models_path.glob("*.pth"))
-        if not model_files:
-            raise FileNotFoundError("No trained model found in the models directory.")
-        model_file = max(model_files, key=os.path.getmtime)
+        # Determine the model file to load
+        if model_path:
+            model_file = Path(model_path)
+            if not model_file.exists():
+                raise FileNotFoundError(f"Specified model path does not exist: {model_path}")
+        else:
+            # Load the most recent trained RNN model from the experiment's models directory
+            model_files = list(self.models_path.glob("*.pth"))
+            if not model_files:
+                raise FileNotFoundError("No trained model found in the models directory.")
+            model_file = max(model_files, key=os.path.getmtime)
 
-    # Initialize RNN with config parameters
-    rnn = RNN(
-        input_size=self.config["input_size"],
-        hidden_size=self.config["hidden_size"],
-        num_layers=self.config["num_layers"],
-        output_size=self.config["outputs"],
-        biased=self.config["biased"]
-    )
-    rnn.load_model(str(model_file))
+        # Initialize RNN with config parameters
+        rnn = RNN(
+            input_size=self.config["input_size"],
+            hidden_size=self.config["hidden_size"],
+            num_layers=self.config["num_layers"],
+            output_size=self.config["outputs"],
+            biased=self.config["biased"]
+        )
+        rnn.load_model(str(model_file))
 
-    # Generate sequences to extract initial states
-    time_steps = num_initial_states * seq_len
-    rnn_data = rnn.gen_seq(time_steps, dynamics_mode)
-    hidden_states = rnn_data["h"]  # Shape: (time_steps, hidden_size)
+        # Generate sequences to extract initial states
+        time_steps = num_initial_states * seq_len
+        rnn_data = rnn.gen_seq(time_steps, dynamics_mode)
+        hidden_states = rnn_data["h"]  # Shape: (time_steps, hidden_size)
 
-    # Randomly select initial states
-    indices = np.random.choice(time_steps, num_initial_states, replace=False)
-    initial_states = hidden_states[indices]  # Shape: (num_initial_states, hidden_size)
+        # Randomly select initial states
+        indices = np.random.choice(time_steps, num_initial_states, replace=False)
+        initial_states = hidden_states[indices]  # Shape: (num_initial_states, hidden_size)
 
-    # Set inputs to zero for autonomous dynamics
-    input_dim = self.config["input_size"]
-    inputs = np.zeros((num_initial_states, input_dim))
+        # Set inputs to zero for autonomous dynamics
+        input_dim = self.config["input_size"]
+        inputs = np.zeros((num_initial_states, input_dim))
 
-    # Initialize FixedPointFinder with the internal nn.RNN module
-    fpf = FixedPointFinderTorch(rnn.rnn)
+        # Initialize FixedPointFinder with the internal nn.RNN module
+        fpf = FixedPointFinderTorch(rnn.rnn)
 
-    # Find fixed points
-    fps = fpf.find_fixed_points(initial_states, inputs)
+        # Find fixed points
+        rnn.train()
+        fps = fpf.find_fixed_points(initial_states, inputs)
+        #rnn.eval()
 
-    # Save fixed points to a file
-    fps_path = self.config_dir / "fixed_points.pkl"
-    with open(fps_path, "wb") as f:
-        pickle.dump(fps, f)
-    print(f"Fixed points saved to {fps_path}")
+        # Save fixed points to a file
+        fps_path = self.config_dir / "fixed_points.pkl"
+        with open(fps_path, "wb") as f:
+            pickle.dump(fps, f)
+        print(f"Fixed points saved to {fps_path}")
 
-    return fps
+        return fps

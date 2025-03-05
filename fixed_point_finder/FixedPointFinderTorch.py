@@ -24,8 +24,8 @@ from copy import deepcopy
 import torch
 from torch.autograd.functional import jacobian
 
-from FixedPointFinderBase import FixedPointFinderBase
-from FixedPoints import FixedPoints
+from fixed_point_finder.FixedPointFinderBase import FixedPointFinderBase
+from fixed_point_finder.FixedPoints import FixedPoints
 
 class FixedPointFinderTorch(FixedPointFinderBase):
 

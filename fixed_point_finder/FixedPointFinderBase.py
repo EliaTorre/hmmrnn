@@ -18,7 +18,7 @@ import numpy as np
 import time
 from copy import deepcopy
 
-from FixedPoints import FixedPoints
+from fixed_point_finder.FixedPoints import FixedPoints
 
 class FixedPointFinderBase(object):
 
