@@ -14,6 +14,7 @@ from scripts.test import Test
 from scripts.reverse import Reverse
 import scripts.config
 from fixed_point_finder.FixedPointFinderTorch import FixedPointFinderTorch
+from fixed_point_finder.plot_utils import plot_fps
 
 class Manager:
     """
@@ -529,9 +530,9 @@ class Manager:
         
         return all_results
 
-    def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None):
+    def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None, plot=True, plot_traj=True, num_traj=10):
         """
-        Find fixed points in the latent space of the trained RNN.
+        Find fixed points in the latent space of the trained RNN and optionally plot them.
 
         Args:
             num_initial_states (int): Number of initial states to use for optimization (default: 100).
@@ -540,6 +541,9 @@ class Manager:
             dynamics_mode (str): Dynamics mode for sequence generation ('recurrence_only' for autonomous dynamics).
             model_path (str, optional): Path to a specific model.pth file to load.
                                         If None, loads the most recent model from the experiment's models directory.
+            plot (bool): Whether to generate and save a plot of the fixed points (default: True).
+            plot_traj (bool): Whether to include RNN state trajectories in the plot (default: True).
+            num_traj (int): Number of trajectories to plot if plot_traj is True (default: 10).
 
         Returns:
             FixedPoints: Object containing the identified fixed points and metadata.
@@ -591,13 +595,42 @@ class Manager:
 
         # Find fixed points
         rnn.train()
-        fps = fpf.find_fixed_points(initial_states, inputs)
-        #rnn.eval()
+        # Find fixed points
+        all_fps, unique_fps = fpf.find_fixed_points(initial_states, inputs)
 
-        # Save fixed points to a file
-        fps_path = self.config_dir / "fixed_points.pkl"
+        # Save all fixed points to a file
+        fps_path = self.config_dir / "fixed_points_all.pkl"
         with open(fps_path, "wb") as f:
-            pickle.dump(fps, f)
-        print(f"Fixed points saved to {fps_path}")
+            pickle.dump(all_fps, f)
+        print(f"All fixed points saved to {fps_path}")
 
-        return fps
+        # Save unique fixed points to a file
+        unique_fps_path = self.config_dir / "fixed_points_unique.pkl"
+        with open(unique_fps_path, "wb") as f:
+            pickle.dump(unique_fps, f)
+        print(f"Unique fixed points saved to {unique_fps_path}")
+
+        # Plotting logic
+        if plot:
+            # Optionally generate state trajectories for plotting
+            if plot_traj:
+                # Generate trajectories: [num_traj, seq_len, hidden_size]
+                traj_data = rnn.gen_seq(num_traj * seq_len, dynamics_mode)
+                state_traj = traj_data["h"].reshape(num_traj, seq_len, self.config["hidden_size"])
+            else:
+                state_traj = None
+
+            # Choose which fixed points to plot
+            fps_to_plot = unique_fps if plot_unique else all_fps
+
+            # Generate the plot using plot_fps
+            fig = plot_fps(fps_to_plot, state_traj=state_traj, plot_batch_idx=list(range(num_traj)) if plot_traj else None)
+
+            # Save the plot
+            plot_name = "fixed_points_unique_plot.pdf" if plot_unique else "fixed_points_all_plot.pdf"
+            plot_path = self.figs_path / plot_name
+            fig.savefig(str(plot_path))
+            print(f"Fixed points plot saved to {plot_path}")
+
+        # Return both all_fps and unique_fps
+        return all_fps, unique_fps
