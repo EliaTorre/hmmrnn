@@ -13,7 +13,7 @@ from scripts.rnn import RNN
 from scripts.test import Test
 from scripts.reverse import Reverse
 import scripts.config
-from fixed_point_finder.FixedPointFinderTorch import FixedPointFinderTorch
+from fixed-point-finder.FixedPointFinderTorch import FixedPointFinderTorch
 
 class Manager:
     """
