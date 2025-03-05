@@ -232,6 +232,15 @@ class HMMTwo_RG(DefaultConfig):
         "seq_len": 100
     }
 
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 700,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
 class HMMThree_RGR(DefaultConfig):
     """Configuration with custom transition and emission matrices"""
 
@@ -264,6 +273,15 @@ class HMMThree_RGR(DefaultConfig):
         "seq_len": 100
     }
 
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 700,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
 class HMMThree_RGB(DefaultConfig):
     """Configuration with custom transition and emission matrices"""
 
@@ -293,7 +311,16 @@ class HMMThree_RGB(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 100
+        "seq_len": 150
+    }
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 1000,  # Reduced epochs for faster execution
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
     }
 
 class HMMFour_RGRB(DefaultConfig):
