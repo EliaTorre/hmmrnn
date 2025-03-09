@@ -23,7 +23,7 @@ from fixed_point_finder.FixedPoints import FixedPoints
 class FixedPointFinderBase(object):
 
     _default_hps = {
-        'tol_q': 1e-12,
+        'tol_q': 1e-15,
         'tol_dq': 1e-20,
         'max_iters': 5000,
         'method': 'joint',
