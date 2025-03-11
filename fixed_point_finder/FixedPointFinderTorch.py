@@ -31,7 +31,7 @@ class FixedPointFinderTorch(FixedPointFinderBase):
 
     def __init__(self, rnn, 
         lr_init=1.0,
-        lr_patience=5,
+        lr_patience=50,
         lr_factor=0.95,
         lr_cooldown=0,
         **kwargs):
