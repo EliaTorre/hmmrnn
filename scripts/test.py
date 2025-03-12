@@ -153,15 +153,13 @@ class Test:
         Returns:
             np.ndarray: Transition matrix
         """
-        trans = np.zeros((seq.shape[0], self.outputs, self.outputs))
+        mat = np.zeros((self.outputs, self.outputs))
         seq_max = np.argmax(seq, axis=2)
         for i in range(seq.shape[0]):
-            mat = np.zeros((self.outputs, self.outputs))
             for j in range(1, self.seq_len):
-                mat[seq_max[j-1], seq_max[j]] += 1
-            trans[i] = mat/mat.sum(axis=1, keepdims=True)
-        return np.mean(trans, axis=0)
-    
+                mat[seq_max[i, j-1], seq_max[i, j]] += 1
+        return mat/mat.sum(axis=1, keepdims=True)
+
     def run_all(self):
         """
         Run all tests and return the results.
