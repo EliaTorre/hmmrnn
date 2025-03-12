@@ -83,14 +83,14 @@ class HMMTwo_inter(DefaultConfig):
         "states": 2,
         "outputs": 3,
         "stay_prob": 0.95,
-        "target_prob": 0.01,
+        "target_prob": 0.05,
         "transition_method": "target_prob",
         "emission_method": "linear"
     }
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500,  # Reduced epochs for faster execution
+        "epochs": 300,  # Reduced epochs for faster execution
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -99,7 +99,7 @@ class HMMTwo_inter(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 20
+        "seq_len": 30
     }
 
 class HMMThree_inter(DefaultConfig):
@@ -108,7 +108,7 @@ class HMMThree_inter(DefaultConfig):
         "states": 3,
         "outputs": 3,
         "stay_prob": 0.95,
-        "target_prob": 0.01,
+        "target_prob": 0.05,
         "transition_method": "target_prob",
         "emission_method": "linear"
     }
@@ -124,7 +124,7 @@ class HMMThree_inter(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 20
+        "seq_len": 30
     }
 
 class HMMFour_inter(DefaultConfig):
@@ -133,7 +133,7 @@ class HMMFour_inter(DefaultConfig):
         "states": 4,
         "outputs": 3,
         "stay_prob": 0.95,
-        "target_prob": 0.01,
+        "target_prob": 0.05,
         "transition_method": "target_prob",
         "emission_method": "linear"
     }
@@ -149,7 +149,7 @@ class HMMFour_inter(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 20
+        "seq_len": 30
     }
 
 class HMMFive_inter(DefaultConfig):
@@ -158,7 +158,7 @@ class HMMFive_inter(DefaultConfig):
         "states": 5,
         "outputs": 3,
         "stay_prob": 0.95,
-        "target_prob": 0.01,
+        "target_prob": 0.05,
         "transition_method": "target_prob",
         "emission_method": "linear"
     }
@@ -174,7 +174,7 @@ class HMMFive_inter(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 20
+        "seq_len": 100
     }
 
 class HMMThree_fully(DefaultConfig):

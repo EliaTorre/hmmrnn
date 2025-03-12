@@ -47,10 +47,10 @@ class Test:
         self.hmm_data3, _ = self.hmm.gen_seq(self.num_seq, self.seq_len)
         
         print("Generating RNN test sequences...")
-        # Generate RNN sequences
-        time_steps = self.num_seq * self.seq_len
-        rnn_outputs = self.rnn.gen_seq(time_steps, "full")
-        self.rnn_data = rnn_outputs["outs"].reshape(self.num_seq, self.seq_len, self.outputs)
+        # Generate RNN sequences using batch mode to get proper shape directly
+        rnn_outputs = self.rnn.gen_seq(dynamics_mode="full", batch_mode=True, 
+                                    num_seq=self.num_seq, seq_len=self.seq_len)
+        self.rnn_data = rnn_outputs["outs"]
         
         return {
             "hmm_data": self.hmm_data,

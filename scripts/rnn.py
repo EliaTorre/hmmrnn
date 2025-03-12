@@ -103,7 +103,7 @@ class RNN(nn.Module):
         val_seq = val_seq.to(self.device)
         
         # Define loss and optimizer
-        criterion = geomloss.SamplesLoss(blur=0.3)  # Sinkhorn Divergence
+        criterion = geomloss.SamplesLoss(blur=0.2)  # Sinkhorn Divergence
         optimizer = optim.Adam(self.parameters(), lr=lr, betas=(0.9, 0.9))
         
         # Reset training history
@@ -186,45 +186,83 @@ class RNN(nn.Module):
         
         return self.train_losses, self.val_losses, self.best_model, self.best_loss
     
-    def gen_seq(self, time_steps, dynamics_mode="full"):
+    def gen_seq(self, time_steps=None, dynamics_mode="full", batch_mode=False, num_seq=None, seq_len=None):
         """
         Generate sequences from the trained RNN model.
         
         Args:
-            time_steps (int): Number of time steps to generate
+            time_steps (int, optional): Number of time steps to generate (required when batch_mode=False)
             dynamics_mode (str): Dynamics mode ('full', 'recurrence_only', 'input_only')
+            batch_mode (bool): Whether to generate sequences in batch mode (with shape [num_seq, seq_len, ...])
+            num_seq (int, optional): Number of sequences to generate (required when batch_mode=True)
+            seq_len (int, optional): Length of each sequence (required when batch_mode=True)
             
         Returns:
             dict: Dictionary containing hidden states, logits, and outputs
         """
         self.eval()
         
-        # Initialize tensors
-        h = torch.zeros((time_steps, self.hidden_size)).to(self.device)
-        logits = torch.zeros((time_steps, self.output_size)).to(self.device)
-        outs = torch.zeros((time_steps, self.output_size)).to(self.device)
-        h[0] = torch.zeros((self.hidden_size)).to(self.device)
-        
         # Extract weights
         ih = self.rnn.weight_ih_l0.data
         hh = self.rnn.weight_hh_l0.data
         fc = self.fc.weight.data
         
-        # Generate hidden states, logits, and outputs
-        for t in range(1, time_steps):
-            x = torch.normal(mean=0, std=1, size=(self.input_size,)).float().to(self.device)
-            if dynamics_mode == 'full':
-                h[t] = torch.relu(x @ ih.T + h[t-1] @ hh.T)
-            elif dynamics_mode == 'recurrence_only':
-                h[t] = torch.relu(h[t-1] @ hh.T)
-            elif dynamics_mode == 'input_only':
-                identity_matrix = torch.eye(self.hidden_size, device=self.device)
-                h[t] = torch.relu(x @ ih.T + h[t-1] @ identity_matrix)
-            else:
-                raise ValueError("Invalid dynamics_mode. Choose from 'full', 'recurrence_only', 'input_only'.")
-        
-        logits = h @ fc.T
-        outs = F.gumbel_softmax(logits, tau=1, hard=True, eps=1e-10, dim=-1)
+        if batch_mode:
+            if num_seq is None or seq_len is None:
+                raise ValueError("num_seq and seq_len must be provided when batch_mode=True")
+            
+            # Initialize tensors for batch mode
+            h = torch.zeros((num_seq, seq_len, self.hidden_size)).to(self.device)
+            logits = torch.zeros((num_seq, seq_len, self.output_size)).to(self.device)
+            outs = torch.zeros((num_seq, seq_len, self.output_size)).to(self.device)
+            
+            # Generate sequences
+            for i in range(num_seq):
+                # Initialize first hidden state for this sequence
+                h[i, 0] = torch.zeros((self.hidden_size)).to(self.device)
+                
+                # Generate the rest of the sequence
+                for t in range(1, seq_len):
+                    x = torch.normal(mean=0, std=1, size=(self.input_size,)).float().to(self.device)
+                    if dynamics_mode == 'full':
+                        h[i, t] = torch.relu(x @ ih.T + h[i, t-1] @ hh.T)
+                    elif dynamics_mode == 'recurrence_only':
+                        h[i, t] = torch.relu(h[i, t-1] @ hh.T)
+                    elif dynamics_mode == 'input_only':
+                        identity_matrix = torch.eye(self.hidden_size, device=self.device)
+                        h[i, t] = torch.relu(x @ ih.T + h[i, t-1] @ identity_matrix)
+                    else:
+                        raise ValueError("Invalid dynamics_mode. Choose from 'full', 'recurrence_only', 'input_only'.")
+                
+                # Calculate logits and outputs for this sequence
+                logits[i] = h[i] @ fc.T
+                outs[i] = F.gumbel_softmax(logits[i], tau=1, hard=True, eps=1e-10, dim=-1)
+        else:
+            if time_steps is None:
+                raise ValueError("time_steps must be provided when batch_mode=False")
+                
+            # Original continuous sequence generation
+            h = torch.zeros((time_steps, self.hidden_size)).to(self.device)
+            logits = torch.zeros((time_steps, self.output_size)).to(self.device)
+            outs = torch.zeros((time_steps, self.output_size)).to(self.device)
+            h[0] = torch.zeros((self.hidden_size)).to(self.device)
+            
+            # Generate hidden states
+            for t in range(1, time_steps):
+                x = torch.normal(mean=0, std=1, size=(self.input_size,)).float().to(self.device)
+                if dynamics_mode == 'full':
+                    h[t] = torch.relu(x @ ih.T + h[t-1] @ hh.T)
+                elif dynamics_mode == 'recurrence_only':
+                    h[t] = torch.relu(h[t-1] @ hh.T)
+                elif dynamics_mode == 'input_only':
+                    identity_matrix = torch.eye(self.hidden_size, device=self.device)
+                    h[t] = torch.relu(x @ ih.T + h[t-1] @ identity_matrix)
+                else:
+                    raise ValueError("Invalid dynamics_mode. Choose from 'full', 'recurrence_only', 'input_only'.")
+            
+            # Calculate logits and outputs
+            logits = h @ fc.T
+            outs = F.gumbel_softmax(logits, tau=1, hard=True, eps=1e-10, dim=-1)
         
         # Convert tensors to numpy arrays
         h_np = h.cpu().detach().numpy()
