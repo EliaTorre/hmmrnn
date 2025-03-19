@@ -78,7 +78,7 @@ class Test:
         seq2_flat = torch.tensor(seq2_flat).float().to(self.device)
         
         # Calculate transport plan
-        _, tp = sinkhorn(seq1_flat, seq2_flat)
+        tp = sinkhorn(seq1_flat, seq2_flat)
         
         # Match sequences based on transport plan
         matched_seq1 = seq1_flat[tp[1].argmax(0)].cpu().detach().numpy()
