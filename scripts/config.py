@@ -77,7 +77,7 @@ class DefaultConfig:
         }
         return config
 
-class HMMTwo_inter(DefaultConfig):
+class HMMTwo(DefaultConfig):
     """Configuration for a small HMM experiment (2 states, 3 outputs)"""
     HMM = {
         "states": 2,
@@ -90,7 +90,7 @@ class HMMTwo_inter(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 300,  # Reduced epochs for faster execution
+        "epochs": 500,  # Reduced epochs for faster execution
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -102,7 +102,7 @@ class HMMTwo_inter(DefaultConfig):
         "seq_len": 30
     }
 
-class HMMThree_inter(DefaultConfig):
+class HMMThree(DefaultConfig):
     """Configuration for a small HMM experiment (3 states, 3 outputs)"""
     HMM = {
         "states": 3,
@@ -127,7 +127,7 @@ class HMMThree_inter(DefaultConfig):
         "seq_len": 30
     }
 
-class HMMFour_inter(DefaultConfig):
+class HMMFour(DefaultConfig):
     """Configuration for a small HMM experiment (4 states, 3 outputs)"""
     HMM = {
         "states": 4,
@@ -152,7 +152,7 @@ class HMMFour_inter(DefaultConfig):
         "seq_len": 30
     }
 
-class HMMFive_inter(DefaultConfig):
+class HMMFive(DefaultConfig):
     """Configuration for a small HMM experiment (5 states, 3 outputs)"""
     HMM = {
         "states": 5,
@@ -166,237 +166,6 @@ class HMMFive_inter(DefaultConfig):
     TRAINING = {
         "batch_size": 4096,
         "epochs": 500,  # Reduced epochs for faster execution
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": True
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 100
-    }
-
-class HMMThree_fully(DefaultConfig):
-    """Configuration for a small HMM experiment (3 states, 3 outputs)"""
-    HMM = {
-        "states": 3,
-        "outputs": 3,
-        "stay_prob": 0.99,
-        "target_prob": 0.01,
-        "transition_method": "fully",
-        "emission_method": "gaussian"
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 700,  # Reduced epochs for faster execution
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": True
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 30
-    }
-
-class HMMTwo_RG(DefaultConfig):
-    """Configuration with custom transition and emission matrices"""
-    
-    # Hand-written matrices (example values)
-    # custom_transition = np.array([
-    #     [0.95, 0.05],
-    #     [0.05, 0.95]
-    # ])
-    
-    custom_emission = np.array([
-        [1, 0, 0],
-        [0, 0, 1],
-    ])
-    
-    HMM = {
-        "states": 2,
-        "outputs": 3,
-        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
-        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
-        "transition_method": "stay_prob",  
-        "emission_method": "custom",
-        #"custom_transition_matrix": custom_transition,
-        "custom_emission_matrix": custom_emission
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 100
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 700,  # Reduced epochs for faster execution
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": True
-    }
-
-class HMMThree_RGR(DefaultConfig):
-    """Configuration with custom transition and emission matrices"""
-
-    # Hand-written matrices (example values)
-    # custom_transition = np.array([
-    #     [0.95, 0.05, 0],
-    #     [0.025, 0.95, 0.025],
-    #     [0, 0.05, 0.95]
-    # ])
-
-    custom_emission = np.array([
-        [1, 0, 0],
-        [0, 0, 1],
-        [1, 0, 0]
-    ])
-
-    HMM = {
-        "states": 3,
-        "outputs": 3,
-        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
-        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
-        "transition_method": "stay_prob",  
-        "emission_method": "custom",
-        #"custom_transition_matrix": custom_transition,
-        "custom_emission_matrix": custom_emission
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 100
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 700,  # Reduced epochs for faster execution
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": True
-    }
-
-class HMMThree_RGB(DefaultConfig):
-    """Configuration with custom transition and emission matrices"""
-
-    # Hand-written matrices (example values)
-    # custom_transition = np.array([
-    #     [0.95, 0.05, 0],
-    #     [0.025, 0.95, 0.025],
-    #     [0, 0.05, 0.95]
-    # ])
-
-    custom_emission = np.array([
-        [1, 0, 0],
-        [0, 0, 1],
-        [0, 1, 0]
-    ])
-
-    HMM = {
-        "states": 3,
-        "outputs": 3,
-        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
-        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
-        "transition_method": "stay_prob",  
-        "emission_method": "custom",
-        #"custom_transition_matrix": custom_transition,
-        "custom_emission_matrix": custom_emission
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 150
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 1000,  # Reduced epochs for faster execution
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": True
-    }
-
-class HMMFour_RGRB(DefaultConfig):
-    """Configuration with custom transition and emission matrices"""
-
-    # Hand-written matrices (example values)
-    # custom_transition = np.array([
-    #     [0.95, 0.05, 0, 0],
-    #     [0.025, 0.95, 0.025],
-    #     [0.025, 0.5, 0.95], 
-    # ])
-
-    custom_emission = np.array([
-        [1, 0, 0],
-        [0, 0, 1],
-        [1, 0, 0],
-        [0, 1, 0]
-    ])
-
-    HMM = {
-        "states": 4,
-        "outputs": 3,
-        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
-        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
-        "transition_method": "stay_prob",  
-        "emission_method": "custom",
-        #"custom_transition_matrix": custom_transition,
-        "custom_emission_matrix": custom_emission
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 700,  # Reduced epochs for faster execution
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": True
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 100
-    }
-
-class HMMFive_RGRBG(DefaultConfig):
-    """Configuration with custom transition and emission matrices"""
-
-    # Hand-written matrices (example values)
-    # custom_transition = np.array([
-    #     [0.95, 0.05, 0, 0],
-    #     [0.025, 0.95, 0.025],
-    #     [0.025, 0.5, 0.95], 
-    # ])
-
-    custom_emission = np.array([
-        [1, 0, 0],
-        [0, 0, 1],
-        [1, 0, 0],
-        [0, 1, 0],
-        [0, 0, 1]
-    ])
-
-    HMM = {
-        "states": 5,
-        "outputs": 3,
-        "stay_prob": 0.95,  # Not used when custom_transition_matrix is provided
-        "target_prob": 0.05,  # Not used when custom_transition_matrix is provided
-        "transition_method": "stay_prob",  
-        "emission_method": "custom",
-        #"custom_transition_matrix": custom_transition,
-        "custom_emission_matrix": custom_emission
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 700,  # Reduced epochs for faster execution
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
