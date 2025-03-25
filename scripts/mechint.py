@@ -1,3 +1,4 @@
+
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -65,21 +66,20 @@ def perform_pca(hidden_states, n_components=3):
     
     return pca, pca_result
 
-def create_grid(pca_result, n_points=20, n_dims=2):
-    """
-    Create a grid in PCA space.
-    
-    Args:
-        pca_result (numpy.ndarray): PCA-transformed hidden states
-        n_points (int): Number of grid points in each dimension
-        n_dims (int): Number of dimensions (2 or 3)
-        
-    Returns:
-        numpy.ndarray: Grid points in PCA space
-    """
-    # Find min and max values for each dimension
+# Create a bounded grid based on pc1 and pc2 if provided
+def create_bounded_grid(pca_result, n_points=20, n_dims=2, pc1=None, pc2=None):
+    # Find min and max values for each dimension from the PCA result
     mins = np.min(pca_result[:, :n_dims], axis=0)
     maxs = np.max(pca_result[:, :n_dims], axis=0)
+    
+    # Override with provided boundaries if not None
+    if pc1 is not None and len(pc1) == 2:
+        mins[0] = pc1[0]
+        maxs[0] = pc1[1]
+    
+    if pc2 is not None and len(pc2) == 2 and n_dims >= 2:
+        mins[1] = pc2[0]
+        maxs[1] = pc2[1]
     
     # Create grid in PCA space
     if n_dims == 2:
@@ -157,10 +157,8 @@ def find_fixed_points(rnn, original_points, pca):
     hh = rnn.rnn.weight_hh_l0.data
     
     # Convert points to tensor
+    print(original_points.shape)
     h = torch.tensor(original_points, dtype=torch.float32).to(device)
-    
-    # Make a copy of initial points
-    h_initial = h.clone()
     
     # Run 300 steps of recurrence-only dynamics with ReLU
     for _ in range(300):
@@ -217,14 +215,14 @@ def compute_both_dynamics(rnn, original_points, use_relu=True):
     # Full dynamics (average over 100 steps)
     h_full = torch.zeros_like(h)
     
-    for _ in range(100):
+    for _ in range(10):
         x = torch.normal(mean=0, std=1, size=(h.shape[0], rnn.input_size)).float().to(device)
         if use_relu:
             h_full += torch.relu(x @ ih.T + h @ hh.T)
         else:
             h_full += x @ ih.T + h @ hh.T
     
-    h_full /= 100  # Average
+    h_full /= 10  # Average
     
     return (
         h_recurrence.cpu().detach().numpy(),
@@ -285,7 +283,7 @@ def project_to_pca(next_steps, pca):
     pca_next_steps = pca.transform(next_steps)
     return pca_next_steps
 
-def plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, save_path=None):
+def plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, save_path=None, pc1=None, pc2=None):
     """
     Plot flow field in 2D using matplotlib with vector alignment coloring and fixed points.
     
@@ -295,6 +293,8 @@ def plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, sav
         fixed_points (numpy.ndarray): Fixed points in PCA space
         alignment (numpy.ndarray): Vector alignment values
         save_path (str, optional): Path to save the plot
+        pc1 (list, optional): [min, max] for the first principal component
+        pc2 (list, optional): [min, max] for the second principal component
         
     Returns:
         tuple: (fig, ax)
@@ -323,7 +323,14 @@ def plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, sav
     
     # Add fixed points as black X markers
     ax.scatter(fixed_points[:, 0], fixed_points[:, 1], 
-               marker='x', color='black', s=100, linewidth=2, label='Fixed Points')
+               marker='x', color='black', s=100, linewidth=2, label='Fixed Point')
+    
+    # Set axis limits if pc1 and pc2 are provided
+    if pc1 is not None and len(pc1) == 2:
+        ax.set_xlim(pc1[0], pc1[1])
+    
+    if pc2 is not None and len(pc2) == 2:
+        ax.set_ylim(pc2[0], pc2[1])
     
     ax.set_title("2D Flow Field in PCA Space", fontsize=14)
     ax.set_xlabel("PC1", fontsize=12)
@@ -337,7 +344,7 @@ def plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, sav
     
     return fig, ax
 
-def plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, save_path=None):
+def plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, save_path=None, pc1=None, pc2=None):
     """
     Plot flow field in 3D using Plotly with vector alignment coloring and fixed points.
     
@@ -347,6 +354,8 @@ def plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, sav
         fixed_points (numpy.ndarray): Fixed points in PCA space
         alignment (numpy.ndarray): Vector alignment values
         save_path (str, optional): Path to save the plot
+        pc1 (list, optional): [min, max] for the first principal component
+        pc2 (list, optional): [min, max] for the second principal component
         
     Returns:
         plotly.graph_objects.Figure: Plotly figure
@@ -423,14 +432,23 @@ def plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, sav
         showlegend=False
     ))
     
+    # Set scene ranges if pc1 and pc2 are provided
+    scene_dict = dict(
+        xaxis_title="PC1",
+        yaxis_title="PC2",
+        zaxis_title="PC3",
+        aspectmode='cube'
+    )
+    
+    if pc1 is not None and len(pc1) == 2:
+        scene_dict['xaxis'] = dict(range=[pc1[0], pc1[1]])
+    
+    if pc2 is not None and len(pc2) == 2:
+        scene_dict['yaxis'] = dict(range=[pc2[0], pc2[1]])
+    
     fig.update_layout(
         title="3D Flow Field in PCA Space",
-        scene=dict(
-            xaxis_title="PC1",
-            yaxis_title="PC2",
-            zaxis_title="PC3",
-            aspectmode='cube'
-        )
+        scene=scene_dict
     )
     
     if save_path:
@@ -439,7 +457,7 @@ def plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, sav
     
     return fig
 
-def plot_combined_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full, fixed_points, alignment, save_path=None):
+def plot_combined_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full, fixed_points, alignment, save_path=None, pc1=None, pc2=None):
     """
     Plot a combined flow field in 2D with three subplots for different dynamics modes.
     
@@ -451,6 +469,8 @@ def plot_combined_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full
         fixed_points (numpy.ndarray): Fixed points in PCA space
         alignment (numpy.ndarray): Vector alignment values
         save_path (str, optional): Path to save the plot
+        pc1 (list, optional): [min, max] for the first principal component
+        pc2 (list, optional): [min, max] for the second principal component
         
     Returns:
         tuple: (fig, axes)
@@ -458,8 +478,15 @@ def plot_combined_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full
     fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
     
     # Compute common limits for all subplots
-    x_min, x_max = grid_points[:, 0].min(), grid_points[:, 0].max()
-    y_min, y_max = grid_points[:, 1].min(), grid_points[:, 1].max()
+    if pc1 is not None and len(pc1) == 2:
+        x_min, x_max = pc1[0], pc1[1]
+    else:
+        x_min, x_max = grid_points[:, 0].min(), grid_points[:, 0].max()
+    
+    if pc2 is not None and len(pc2) == 2:
+        y_min, y_max = pc2[0], pc2[1]
+    else:
+        y_min, y_max = grid_points[:, 1].min(), grid_points[:, 1].max()
     
     # Normalize alignment values for coloring
     alignment_min = np.min(alignment)
@@ -491,9 +518,9 @@ def plot_combined_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full
         
         # Add fixed points
         ax.scatter(fixed_points[:, 0], fixed_points[:, 1], 
-                   marker='x', color='black', s=100, linewidth=2, label='Fixed Points')
+                   marker='x', color='black', s=100, linewidth=2, label='Fixed Point')
         
-        # Set limits and labels
+        # Set limits
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
         ax.set_title(title, fontsize=14)
@@ -515,7 +542,8 @@ def plot_combined_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full
 
 def visualize_flow_field(model_path, is_2d=True, dynamics_mode="recurrence_only", use_relu=True, 
                          alignment_method="cosine", save_path=None, input_size=100, hidden_size=150, 
-                         num_layers=1, output_size=3, biased=[False, False], combined_plot=False):
+                         num_layers=1, output_size=3, biased=[False, False], combined_plot=False,
+                         pc1=None, pc2=None):
     """
     Generate and visualize the flow field of an RNN model in PCA space with vector alignment coloring and fixed points.
     
@@ -532,6 +560,8 @@ def visualize_flow_field(model_path, is_2d=True, dynamics_mode="recurrence_only"
         output_size (int): Number of output classes
         biased (list): Whether to use bias in RNN and linear layers
         combined_plot (bool): Whether to generate a combined plot with all three dynamics modes
+        pc1 (list, optional): [min, max] for the first principal component
+        pc2 (list, optional): [min, max] for the second principal component
         
     Returns:
         tuple: Plot figure and axes (for 2D) or Plotly figure (for 3D)
@@ -550,14 +580,16 @@ def visualize_flow_field(model_path, is_2d=True, dynamics_mode="recurrence_only"
     # 2. Generate sequences for PCA
     rnn_data = generate_sequences(rnn)
     
-    # 3. Perform PCA
+    # 3. Perform PCA (still using full dynamics in unrestricted space)
     pca, pca_result = perform_pca(rnn_data["h"], n_components=n_dims)
     print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
     
     # 4. Create grid in PCA space
     n_points = 15 if is_2d else 10  # Fewer points for 3D to avoid clutter
     print(f"Creating {n_points}x{n_points} grid in PCA space...")
-    grid_points = create_grid(pca_result, n_points=n_points, n_dims=n_dims)
+    
+    # Use our custom bounded grid creation function
+    grid_points = create_bounded_grid(pca_result, n_points=n_points, n_dims=n_dims, pc1=pc1, pc2=pc2)
     
     # 5. Map grid points to original space
     original_points = map_to_original_space(grid_points, pca)
@@ -578,7 +610,7 @@ def visualize_flow_field(model_path, is_2d=True, dynamics_mode="recurrence_only"
         pca_input = project_to_pca(input_steps, pca)
         pca_full = project_to_pca(full_steps, pca)
         
-        # Generate combined plot
+        # Generate combined plot with boundaries
         return plot_combined_flow_field_2d(
             grid_points, 
             pca_recurrence,
@@ -586,7 +618,9 @@ def visualize_flow_field(model_path, is_2d=True, dynamics_mode="recurrence_only"
             pca_full,
             fixed_points, 
             alignment, 
-            save_path
+            save_path,
+            pc1,
+            pc2
         )
     else:
         # Original functionality for a single dynamics mode
@@ -602,8 +636,8 @@ def visualize_flow_field(model_path, is_2d=True, dynamics_mode="recurrence_only"
         # Project next steps to PCA space
         pca_next_steps = project_to_pca(next_steps, pca)
         
-        # Visualize flow field
+        # Visualize flow field with boundaries
         if is_2d:
-            return plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, save_path)
+            return plot_flow_field_2d(grid_points, pca_next_steps, fixed_points, alignment, save_path, pc1, pc2)
         else:
-            return plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, save_path)
+            return plot_flow_field_3d(grid_points, pca_next_steps, fixed_points, alignment, save_path, pc1, pc2)
