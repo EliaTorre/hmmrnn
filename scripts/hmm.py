@@ -49,21 +49,9 @@ class HMM:
             self.emission_probabilities = self.gen_emission_prob()
     
     def gen_start_prob(self):
-        """Generate uniform starting probabilities for HMM states"""
         return np.full(self.states, 1/self.states)
     
     def gen_trans_mat(self):
-        """
-        Generate a transition matrix based on the chosen method.
-        
-        Methods:
-            'stay_prob': Creates a tridiagonal matrix where each state is connected to its neighbors.
-            'target_prob': Uses a target probability for uniform distribution.
-            'fully': Creates a fully connected transition matrix where each state can transition to every other state.
-        
-        Returns:
-            np.ndarray: Transition matrix with shape (states, states)
-        """
         transition_matrix = np.zeros((self.states, self.states))
         
         if self.transition_method == 'stay_prob':
@@ -136,12 +124,6 @@ class HMM:
         return transition_matrix
     
     def gen_emission_prob(self):
-        """
-        Generate emission probabilities for an HMM using one of two methods.
-        
-        Returns:
-            np.ndarray: Emission probability matrix with shape (states, outputs)
-        """
         if self.emission_method == 'linear':
             emission_probabilities = np.zeros((self.states, self.outputs))
             for i in range(self.states):

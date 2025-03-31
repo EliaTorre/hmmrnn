@@ -38,22 +38,6 @@ def direction_grid(vector_grid, direction):
         final_vectors[:, :, 0] = np.cos(angle_rad)
         final_vectors[:, :, 1] = np.sin(angle_rad)
     
-    # New directions (uniform magnitude, direction determined by position)
-    elif direction == 'towards_center':
-        # Only use position to determine direction
-        for i in range(rows):
-            for j in range(cols):
-                x, y = vector_grid[i, j]
-                # Calculate direction (not magnitude) from position to center
-                if x == 0 and y == 0:  # At center
-                    final_vectors[i, j, 0] = 0
-                    final_vectors[i, j, 1] = 0
-                else:
-                    # Direction vector pointing toward center (0,0)
-                    magnitude = np.sqrt(x**2 + y**2)
-                    final_vectors[i, j, 0] = -x / magnitude
-                    final_vectors[i, j, 1] = -y / magnitude
-    
     elif direction == 'away_from_center':
         # Define vectors for each quadrant that need to be normalized
         for i in range(rows):
@@ -175,33 +159,6 @@ def direction_grid(vector_grid, direction):
                     vector = np.array([0, 0])
                     
                 final_vectors[i, j] = vector
-    
-    elif direction == 'vortex':
-        # Vortex field - combination of circular and radial (unit vectors)
-        for i in range(rows):
-            for j in range(cols):
-                x, y = vector_grid[i, j]
-                if x == 0 and y == 0:  # At center
-                    final_vectors[i, j, 0] = 0
-                    final_vectors[i, j, 1] = 0
-                else:
-                    # Circular component (tangent)
-                    magnitude = np.sqrt(x**2 + y**2)
-                    circular_x = -y / magnitude
-                    circular_y = x / magnitude
-                    
-                    # Radial component (outward)
-                    radial_x = x / magnitude
-                    radial_y = y / magnitude
-                    
-                    # Mix them (70% circular, 30% radial)
-                    mixed_x = 0.7 * circular_x + 0.3 * radial_x
-                    mixed_y = 0.7 * circular_y + 0.3 * radial_y
-                    
-                    # Normalize final vector
-                    mix_magnitude = np.sqrt(mixed_x**2 + mixed_y**2)
-                    final_vectors[i, j, 0] = mixed_x / mix_magnitude
-                    final_vectors[i, j, 1] = mixed_y / mix_magnitude
     
     return final_vectors
 
