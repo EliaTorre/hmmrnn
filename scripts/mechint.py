@@ -539,3 +539,171 @@ def relu(x):
     result[result < 0] = 0
     return result
 
+def rnn_noise_var(model_path, n_states=1000, n_samples=1000, use_temp=True):
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+
+    h = torch.zeros((n_states, 150)).to(ih.device)
+    for i in range(n_states):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
+        h[i] = torch.relu(x @ ih.T + (h[i-1] @ hh.T if i > 0 else 0))
+    
+    noise_types = {
+        'ih': torch.zeros((n_states, n_samples, 150)).to(ih.device),
+        'relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
+        'ih_relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
+        'ih_relu_hh': torch.zeros((n_states, n_samples, 150)).to(ih.device)
+    }
+    for i in tqdm(range(n_states), desc="Computing noise samples"):
+        for j in range(n_samples):
+            x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
+            x_ih = x @ ih.T
+            noise_types['ih'][i, j] = x_ih
+            noise_types['relu'][i, j] = torch.relu(x_ih)
+            noise_types['ih_relu'][i, j] = torch.relu(x_ih + h[i]) - h[i]
+            noise_types['ih_relu_hh'][i, j] = torch.relu(x_ih + h[i] @ hh.T) - h[i]
+    
+    results = {}
+    n_components = 150
+    for noise_type, noise_tensor in noise_types.items():
+        exp_var = np.zeros((n_states, n_components))
+        for i in tqdm(range(n_states), desc=f"PCA per state ({noise_type})"):
+            noise_samples = noise_tensor[i].cpu().numpy()
+            if use_temp:
+                temp = np.vstack((noise_samples, -noise_samples))
+                pca = PCA(n_components=n_components)
+                pca.fit(temp)
+            else:
+                pca = PCA(n_components=n_components)
+                pca.fit(noise_samples)
+            exp_var[i] = pca.explained_variance_ratio_
+        
+        cum_variance = np.cumsum(exp_var, axis=1)
+        avg_cum_variance = np.mean(cum_variance, axis=0)
+        
+        noise_stacked = noise_tensor.reshape(n_states * n_samples, n_components).cpu().numpy()
+        if use_temp:
+            temp_stacked = np.vstack((noise_stacked, -noise_stacked))
+            pca_stacked = PCA(n_components=n_components)
+            pca_stacked.fit(temp_stacked)
+        else:
+            pca_stacked = PCA(n_components=n_components)
+            pca_stacked.fit(noise_stacked)
+        cum_variance_stacked = np.cumsum(pca_stacked.explained_variance_ratio_)
+        
+        results[noise_type] = {
+            'individual': cum_variance,
+            'average': avg_cum_variance,
+            'stacked': cum_variance_stacked
+        }
+    
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    titles = {
+        'ih': 'x @ ih.T',
+        'relu': 'ReLU(x @ ih.T)',
+        'ih_relu': 'ReLU(x @ ih.T + h) - h',
+        'ih_relu_hh': 'ReLU(x @ ih.T + h @ hh.T) - h'
+    }
+    for i, (noise_type, title) in enumerate(titles.items()):
+        ax = axes[i]
+        for j in range(n_states):
+            ax.plot(range(1, 151), results[noise_type]['individual'][j], alpha=0.05, color='gray')
+        ax.plot(range(1, 151), results[noise_type]['average'], color='red', label='Avg over states', linewidth=2)
+        ax.plot(range(1, 151), results[noise_type]['stacked'], color='blue', label='All concatenated', linewidth=2)
+        ax.axhline(y=0.95, color='gray', linestyle='--', alpha=0.7)
+        ax.axhline(y=0.80, color='gray', linestyle='--', alpha=0.7)
+        if i == 0:
+            ax.text(120, 0.96, '95%', fontsize=9)
+            ax.text(120, 0.81, '80%', fontsize=9)
+            ax.axvline(x=3, color='gray', linestyle='--', alpha=0.7)
+            ax.text(4, 0.05, '3 PC', fontsize=9)
+        else:
+            ax.axvline(x=3, color='gray', linestyle='--', alpha=0.7)
+        ax.set_xlabel('Principal Components')
+        if i == 0:
+            ax.set_ylabel('Explained Variance')
+        ax.set_title(f'{title}')
+        ax.set_xlim(0, 150)
+        ax.set_ylim(0, 1.05)
+        if i == 3:
+            ax.legend(loc='lower right', fontsize=9)
+        ax.grid(False)
+    plt.tight_layout()
+    plt.show()
+
+def noise_cosine_similarity(model_path, n_states=1000, n_samples=1000):
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    ih = rnn.rnn.weight_ih_l0.data 
+    hh = rnn.rnn.weight_hh_l0.data 
+
+    h = torch.zeros((n_states, 150)).to(ih.device)
+    for i in tqdm(range(n_states), desc="Generating hidden states"):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
+        h[i] = torch.relu(x @ ih.T + (h[i-1] @ hh.T if i > 0 else 0))
+
+    noise_ih = np.zeros((n_states, n_samples, 150))
+    noise_relu = np.zeros((n_states, n_samples, 150))
+    noise_ih_relu = np.zeros((n_states, n_samples, 150))
+    noise_ih_relu_hh = np.zeros((n_states, n_samples, 150))
+
+    for i in tqdm(range(n_states), desc="Computing noise samples"):
+        for j in range(n_samples):
+            x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
+            noise_ih[i, j] = (x @ ih.T).cpu().detach().numpy()
+            noise_relu[i, j] = torch.relu(x @ ih.T).cpu().detach().numpy()
+            noise_ih_relu[i, j] = (torch.relu(x @ ih.T + h[i]) - h[i]).cpu().detach().numpy()
+            noise_ih_relu_hh[i, j] = (torch.relu(x @ ih.T + h[i] @ hh.T) - h[i]).cpu().detach().numpy()
+    
+    noise_means = {
+        'ih': np.mean(noise_ih, axis=1),
+        'relu': np.mean(noise_relu, axis=1),
+        'ih_relu': np.mean(noise_ih_relu, axis=1),
+        'ih_relu_hh': np.mean(noise_ih_relu_hh, axis=1)
+    }
+    
+    cos_sim = {
+        'ih': np.zeros((n_states, n_samples)),
+        'relu': np.zeros((n_states, n_samples)),
+        'ih_relu': np.zeros((n_states, n_samples)),
+        'ih_relu_hh': np.zeros((n_states, n_samples))
+    }
+    
+    for mod in ['ih', 'relu', 'ih_relu', 'ih_relu_hh']:
+        noise_data = noise_ih if mod == 'ih' else noise_relu if mod == 'relu' else noise_ih_relu if mod == 'ih_relu' else noise_ih_relu_hh
+        for i in tqdm(range(n_states), desc=f"Computing cosine similarity ({mod})"):
+            for j in range(n_samples):
+                noise_vec = noise_data[i, j]
+                mean_vec = noise_means[mod][i]
+                cos_sim[mod][i, j] = np.dot(noise_vec, mean_vec) / (np.linalg.norm(noise_vec) * np.linalg.norm(mean_vec))
+    
+    cos_sim_mean = {mod: np.mean(cos_sim[mod], axis=1) for mod in cos_sim}
+    cos_sim_std = {mod: np.std(cos_sim[mod], axis=1) for mod in cos_sim}
+    
+    fig, axs = plt.subplots(1, 4, figsize=(20, 5))
+    titles = {
+        'ih': 'x @ ih.T',
+        'relu': 'ReLU(x @ ih.T)',
+        'ih_relu': 'ReLU(x @ ih.T + h) - h',
+        'ih_relu_hh': 'ReLU(x @ ih.T + h @ hh.T) - h'
+    }
+    
+    for i, mod in enumerate(['ih', 'relu', 'ih_relu', 'ih_relu_hh']):
+        ax = axs[i]
+        ax.errorbar(np.arange(n_states), cos_sim_mean[mod], yerr=cos_sim_std[mod], 
+                    fmt='o', markersize=2, color='darkgreen', ecolor='lightgreen', capsize=2)
+        ax.text(0.85, 0.25, f'Mean: {np.mean(cos_sim_mean[mod]):.3f}\nStd: {np.mean(cos_sim_std[mod]):.3f}', 
+                ha='center', va='bottom', transform=ax.transAxes)
+        ax.set_title(titles[mod], fontsize=12, fontweight='bold')
+        ax.set_ylim(0, 1)
+        ax.set_xlabel('# of Random Initial Conditions', fontsize=10)
+        if i == 0:
+            ax.set_ylabel('Cosine Similarity', fontsize=10)
+        if i > 0:
+            ax.set_yticks([])
+    
+    plt.suptitle('Cosine Similarity between Random Noise and Mean at ICs', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    plt.show()

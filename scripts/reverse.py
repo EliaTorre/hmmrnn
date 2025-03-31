@@ -4,19 +4,7 @@ import plotly.graph_objects as go
 from sklearn.decomposition import PCA
 
 class Reverse:
-    """
-    Class for analyzing and visualizing RNN hidden states through PCA.
-    """
     def __init__(self, rnn, num_seq, seq_len, outputs):
-        """
-        Initialize the PCA analyzer.
-        
-        Args:
-            rnn: RNN instance
-            num_seq (int): Number of sequences
-            seq_len (int): Length of each sequence
-            outputs (int): Number of output symbols
-        """
         self.rnn = rnn
         self.num_seq = num_seq
         self.seq_len = seq_len
@@ -32,31 +20,12 @@ class Reverse:
             self.colors_dict = {i: colors[i % len(colors)] for i in range(outputs)}
             
     def run_pca(self, hidden_states, n_components=5):
-        """
-        Run PCA on hidden states.
-        
-        Args:
-            hidden_states: Hidden state data
-            n_components (int): Number of principal components to extract
-            
-        Returns:
-            tuple: (pca, pca_result)
-        """
         pca = PCA(n_components=n_components)
         pca_result = pca.fit_transform(hidden_states)
         
         return pca, pca_result
     
     def gen_data(self, dynamics_mode="full"):
-        """
-        Generate RNN data and perform PCA on hidden states.
-        
-        Args:
-            dynamics_mode (str): Dynamics mode for RNN sequence generation
-            
-        Returns:
-            dict: Dictionary with analysis results
-        """
         # Generate RNN sequences
         print("Generating RNN sequences for PCA...")
         rnn_data = self.rnn.gen_seq(self.time_steps, dynamics_mode)
@@ -78,16 +47,6 @@ class Reverse:
         }
     
     def plot_2d(self, num_points=1000, save_path=None):
-        """
-        Create a 2D plot of the PCA-projected hidden states.
-        
-        Args:
-            num_points (int): Number of points to plot
-            save_path (str, optional): Path to save the plot
-            
-        Returns:
-            tuple: (fig, ax)
-        """
         fig, ax = plt.subplots(figsize=(8, 6))
         
         # Draw arrows for transitions
@@ -113,17 +72,6 @@ class Reverse:
         return fig, ax
     
     def plot_3d(self, num_points=1000, save_path=None, cone_scale=0.1):
-        """
-        Create an interactive 3D plot of the PCA-projected hidden states with directional cones.
-        
-        Args:
-            num_points (int): Number of points to plot
-            save_path (str, optional): Path to save the plot
-            cone_scale (float): Scale factor for cone size (default: 0.1)
-            
-        Returns:
-            plotly.graph_objects.Figure: Plotly figure
-        """
         fig = go.Figure()
         
         # Draw lines for transitions
@@ -179,16 +127,6 @@ class Reverse:
         return fig
     
     def run_analysis(self, dynamics_mode="full", save_path=""):
-        """
-        Run the full PCA analysis and generate plots.
-        
-        Args:
-            dynamics_mode (str): Dynamics mode for RNN sequence generation
-            save_path (str): Base path to save plots
-            
-        Returns:
-            dict: Dictionary with analysis results
-        """
         # Generate data and run PCA
         data = self.gen_data(dynamics_mode)
         
