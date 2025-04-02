@@ -539,7 +539,7 @@ def relu(x):
     result[result < 0] = 0
     return result
 
-def rnn_noise_var(model_path, n_states=1000, n_samples=1000, use_temp=True):
+def rnn_var(model_path, n_states=1000, n_samples=1000, use_temp=True):
     rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
     rnn.load_state_dict(torch.load(model_path))
     ih = rnn.rnn.weight_ih_l0.data
@@ -550,9 +550,11 @@ def rnn_noise_var(model_path, n_states=1000, n_samples=1000, use_temp=True):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
         h[i] = torch.relu(x @ ih.T + (h[i-1] @ hh.T if i > 0 else 0))
     
-    noise_types = {
+    types = {
         'ih': torch.zeros((n_states, n_samples, 150)).to(ih.device),
         'relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
+        'hh': torch.zeros((n_states, n_samples, 150)).to(ih.device),
+        'hh_relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
         'ih_relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
         'ih_relu_hh': torch.zeros((n_states, n_samples, 150)).to(ih.device)
     }
@@ -560,30 +562,32 @@ def rnn_noise_var(model_path, n_states=1000, n_samples=1000, use_temp=True):
         for j in range(n_samples):
             x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
             x_ih = x @ ih.T
-            noise_types['ih'][i, j] = x_ih
-            noise_types['relu'][i, j] = torch.relu(x_ih)
-            noise_types['ih_relu'][i, j] = torch.relu(x_ih + h[i]) - h[i]
-            noise_types['ih_relu_hh'][i, j] = torch.relu(x_ih + h[i] @ hh.T) - h[i]
+            types['ih'][i, j] = x_ih
+            types['hh'][i, j] = (h[i] @ hh.T) - h[i]
+            types['relu'][i, j] = torch.relu(x_ih)
+            types['ih_relu'][i, j] = torch.relu(x_ih + h[i]) - h[i]
+            types['hh_relu'][i, j] = torch.relu(h[i] @ hh.T) - h[i]
+            types['ih_relu_hh'][i, j] = torch.relu(x_ih + h[i] @ hh.T) - h[i]
     
     results = {}
     n_components = 150
-    for noise_type, noise_tensor in noise_types.items():
+    for step_type, step_tensor in types.items():
         exp_var = np.zeros((n_states, n_components))
-        for i in tqdm(range(n_states), desc=f"PCA per state ({noise_type})"):
-            noise_samples = noise_tensor[i].cpu().numpy()
+        for i in tqdm(range(n_states), desc=f"PCA per state ({step_type})"):
+            step_samples = step_tensor[i].cpu().numpy()
             if use_temp:
-                temp = np.vstack((noise_samples, -noise_samples))
+                temp = np.vstack((step_samples, -step_samples))
                 pca = PCA(n_components=n_components)
                 pca.fit(temp)
             else:
                 pca = PCA(n_components=n_components)
-                pca.fit(noise_samples)
+                pca.fit(step_samples)
             exp_var[i] = pca.explained_variance_ratio_
         
         cum_variance = np.cumsum(exp_var, axis=1)
         avg_cum_variance = np.mean(cum_variance, axis=0)
         
-        noise_stacked = noise_tensor.reshape(n_states * n_samples, n_components).cpu().numpy()
+        noise_stacked = step_tensor.reshape(n_states * n_samples, n_components).cpu().numpy()
         if use_temp:
             temp_stacked = np.vstack((noise_stacked, -noise_stacked))
             pca_stacked = PCA(n_components=n_components)
@@ -593,25 +597,27 @@ def rnn_noise_var(model_path, n_states=1000, n_samples=1000, use_temp=True):
             pca_stacked.fit(noise_stacked)
         cum_variance_stacked = np.cumsum(pca_stacked.explained_variance_ratio_)
         
-        results[noise_type] = {
+        results[step_type] = {
             'individual': cum_variance,
             'average': avg_cum_variance,
             'stacked': cum_variance_stacked
         }
     
-    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    fig, axes = plt.subplots(1, 6, figsize=(30, 5))
     titles = {
         'ih': 'x @ ih.T',
+        'hh': 'h @ hh.T - h',
         'relu': 'ReLU(x @ ih.T)',
         'ih_relu': 'ReLU(x @ ih.T + h) - h',
+        'hh_relu': 'ReLU(h @ hh.T) - h',
         'ih_relu_hh': 'ReLU(x @ ih.T + h @ hh.T) - h'
     }
-    for i, (noise_type, title) in enumerate(titles.items()):
+    for i, (step_type, title) in enumerate(titles.items()):
         ax = axes[i]
         for j in range(n_states):
-            ax.plot(range(1, 151), results[noise_type]['individual'][j], alpha=0.05, color='gray')
-        ax.plot(range(1, 151), results[noise_type]['average'], color='red', label='Avg over states', linewidth=2)
-        ax.plot(range(1, 151), results[noise_type]['stacked'], color='blue', label='All concatenated', linewidth=2)
+            ax.plot(range(1, 151), results[step_type]['individual'][j], alpha=0.05, color='gray')
+        ax.plot(range(1, 151), results[step_type]['average'], color='red', label='Avg over states', linewidth=2)
+        ax.plot(range(1, 151), results[step_type]['stacked'], color='blue', label='All concatenated', linewidth=2)
         ax.axhline(y=0.95, color='gray', linestyle='--', alpha=0.7)
         ax.axhline(y=0.80, color='gray', linestyle='--', alpha=0.7)
         if i == 0:
