@@ -5,22 +5,10 @@ import torch.optim as optim
 import geomloss
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path 
 
 class RNN(nn.Module):
-    """
-    A recurrent neural network model for sequence modeling.
-    """
     def __init__(self, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False]):
-        """
-        Initialize the RNN model.
-        
-        Args:
-            input_size (int): Size of the input features
-            hidden_size (int): Size of the hidden layer
-            num_layers (int): Number of RNN layers
-            output_size (int): Number of output classes
-            biased (list): Whether to use bias in RNN and linear layers
-        """
         super(RNN, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -44,18 +32,6 @@ class RNN(nn.Module):
         self.to(self.device)
         
     def forward(self, x, tau=1.0, init=True, gumbel=True):
-        """
-        Forward pass through the RNN.
-        
-        Args:
-            x (torch.Tensor): Input tensor
-            tau (float): Temperature for Gumbel-Softmax
-            init (bool): Whether to initialize hidden state with noise
-            gumbel (bool): Whether to use Gumbel-Softmax
-            
-        Returns:
-            tuple: (outputs, hidden_states, logits)
-        """
         # Initialize hidden state
         if init:
             h = torch.normal(mean=0, std=1, size=(self.num_layers, x.size(0), self.hidden_size)).to(self.device)
@@ -76,7 +52,8 @@ class RNN(nn.Module):
         return out, hidden, logits
     
     def train_model(self, train_seq, val_seq, batch_size=4096, lr=0.001, tau=1.0, 
-                epochs=1000, grad_clip=0.9, init=True, criterion=None, verbose=False):
+                    epochs=1000, grad_clip=0.9, init=True, criterion=None, verbose=False,
+                    save_interval=None, save_path=None):
         """
         Train the RNN model.
         
@@ -91,6 +68,8 @@ class RNN(nn.Module):
             init (bool): Whether to initialize hidden state with noise
             criterion: Loss function
             verbose (bool): Whether to print progress
+            save_interval (int, optional): Save model every save_interval epochs
+            save_path (Path or str, optional): Directory to save intermediate models
             
         Returns:
             tuple: (train_losses, val_losses, best_model, best_loss)
@@ -110,7 +89,7 @@ class RNN(nn.Module):
         self.train_losses, self.val_losses = [], []
         self.best_loss = float('inf')
         
-        # For each epoch
+        # Training loop
         for epoch in range(epochs):
             # Generate random noise as inputs
             train_shape = (train_seq.shape[0], train_seq.shape[1], self.input_size)
@@ -127,26 +106,19 @@ class RNN(nn.Module):
                 inputs = train_noise[i:batch_end].float()
                 targets = train_seq[i:batch_end].float()
                 
-                # Zero the gradients
                 optimizer.zero_grad()
-                
-                # Forward pass
                 outputs, _, _ = self(inputs, tau, init=init)
                 
-                # Reshape for loss calculation
                 outputs = outputs.reshape(outputs.shape[0], -1)
                 targets = targets.reshape(targets.shape[0], -1)
                 
-                # Calculate loss
                 loss = criterion(outputs, targets)
                 train_loss.append(loss.item())
                 
-                # Backward pass and optimize
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.parameters(), grad_clip)
                 optimizer.step()
             
-            # Calculate average training loss
             avg_train_loss = sum(train_loss) / len(train_loss)
             self.train_losses.append(avg_train_loss)
             
@@ -160,18 +132,14 @@ class RNN(nn.Module):
                     inputs = val_noise[i:batch_end].float()
                     targets = val_seq[i:batch_end].float()
                     
-                    # Forward pass
                     outputs, _, _ = self(inputs, tau, init=init)
                     
-                    # Reshape for loss calculation
                     outputs = outputs.reshape(outputs.shape[0], -1)
                     targets = targets.reshape(targets.shape[0], -1)
                     
-                    # Calculate loss
                     loss = criterion(outputs, targets)
                     val_loss.append(loss.item())
             
-            # Calculate average validation loss
             avg_val_loss = sum(val_loss) / len(val_loss)
             self.val_losses.append(avg_val_loss)
             
@@ -179,6 +147,13 @@ class RNN(nn.Module):
             if avg_val_loss < self.best_loss:
                 self.best_loss = avg_val_loss
                 self.best_model = self.state_dict()
+            
+            # Save intermediate model if conditions are met
+            if save_interval is not None and (epoch == 0 or (epoch % save_interval == save_interval - 1)):
+                model_path = Path(save_path) / f"model_epoch_{epoch+1}.pth"
+                torch.save(self.state_dict(), model_path)
+                if verbose:
+                    print(f"Model saved at epoch {epoch+1} to {model_path}")
             
             # Print progress
             if verbose and ((epoch + 1) % 10 == 0 or epoch == 0):
@@ -276,24 +251,16 @@ class RNN(nn.Module):
         }
     
     def save_model(self, path):
-        """Save the model to the specified path"""
         torch.save(self.best_model if hasattr(self, 'best_model') and self.best_model is not None 
                    else self.state_dict(), path)
         print(f"Model saved to {path}")
     
     def load_model(self, path):
-        """Load the model from the specified path"""
-        self.load_state_dict(torch.load(path, map_location=self.device))
+        self.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))
         self.eval()
-        print(f"Model loaded from {path}")
+        #print(f"Model loaded from {path}")
     
     def plot_losses(self, save_path=None):
-        """
-        Plot training and validation losses.
-        
-        Args:
-            save_path (str, optional): Path to save the plot
-        """
         plt.figure(figsize=(10, 6))
         plt.plot(self.train_losses, label='Training Loss')
         plt.plot(self.val_losses, label='Validation Loss')

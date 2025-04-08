@@ -530,6 +530,172 @@ class Manager:
         
         return all_results
 
+    def run_training_evo(self, verbose=False):
+        """
+        Train an RNN model on HMM data, saving intermediate models every 5 epochs (including after the first epoch).
+        Tests and plots are generated only for the final model. Intermediate models are stored in a subdirectory
+        with an '_evo' flag in the timestamp. Returns a results dictionary.
+        
+        Args:
+            verbose (bool): Whether to print detailed progress
+            
+        Returns:
+            dict: Dictionary with experiment results
+        """
+        # Record start time
+        start_time = datetime.datetime.now()
+        print(f"Starting RNN training with evolution saving at {start_time}")
+        
+        # Modify timestamp to include '_evo' flag
+        evo_timestamp = f"{self.timestamp}_evo"
+        experiments_dir = Path("Experiments")
+        self.experiment_dir = experiments_dir / evo_timestamp
+        self.experiment_dir.mkdir(exist_ok=True)
+        
+        # Create config-specific folder
+        self.config_dir = self.experiment_dir / self.config_name
+        self.config_dir.mkdir(exist_ok=True)
+        
+        # Create subfolders
+        self.models_path = self.config_dir / "models"
+        self.figs_path = self.config_dir / "figs"
+        self.data_path = self.config_dir / "data"
+        self.models_path.mkdir(exist_ok=True)
+        self.figs_path.mkdir(exist_ok=True)
+        self.data_path.mkdir(exist_ok=True)
+        
+        # Create evolution models directory
+        evolution_models_path = self.models_path / "evolution"
+        evolution_models_path.mkdir(exist_ok=True)
+        
+        # Create HMM and RNN models
+        hmm = HMM(
+            states=self.config["states"],
+            outputs=self.config["outputs"],
+            stay_prob=self.config["stay_prob"],
+            target_prob=self.config.get("target_prob", 0.05),
+            transition_method=self.config.get("transition_method", "target_prob"),
+            emission_method=self.config["emission_method"],
+            custom_transition_matrix=self.config.get("custom_transition_matrix", None),
+            custom_emission_matrix=self.config.get("custom_emission_matrix", None)
+        )
+        
+        rnn = RNN(
+            input_size=self.config["input_size"],
+            hidden_size=self.config["hidden_size"],
+            num_layers=self.config["num_layers"],
+            output_size=self.config["outputs"],
+            biased=self.config["biased"]
+        )
+        
+        # Generate HMM data
+        print("Generating HMM data...")
+        one_hot_sequences, sampled_states = hmm.gen_seq(
+            self.config["num_seq"], self.config["seq_len"]
+        )
+        
+        # Split the data
+        print("Splitting data...")
+        data_splits = hmm.split_data(one_hot_sequences, sampled_states)
+        
+        # Save the data
+        data_path = self.data_path / "hmm_sequences.pkl"
+        with open(data_path, "wb") as f:
+            data_to_save = {
+                key: value.numpy() if isinstance(value, torch.Tensor) else value
+                for key, value in data_splits.items()
+            }
+            pickle.dump(data_to_save, f)
+        print(f"HMM data saved to {data_path}")
+        
+        # Setup Sinkhorn loss
+        criterion = geomloss.SamplesLoss(blur=0.3)
+        
+        # Use the first learning rate for simplicity
+        lr = self.config.get("learning_rates", [0.001])[0]
+        print(f"Training with learning rate: {lr}")
+        
+        # Train the model with saving every 5 epochs
+        rnn.train_model(
+            train_seq=data_splits["train_seq"],
+            val_seq=data_splits["val_seq"],
+            batch_size=self.config.get("batch_size", 4096),
+            lr=lr,
+            tau=self.config.get("tau", 1.0),
+            epochs=self.config.get("epochs", 1000),
+            grad_clip=self.config.get("grad_clip", 0.9),
+            init=self.config.get("init", True),
+            criterion=criterion,
+            verbose=verbose,
+            save_interval=1,
+            save_path=evolution_models_path
+        )
+        
+        # Save the final model
+        final_model_filename = f"{hmm.states}HMM_{hmm.outputs}Outputs_{self.config['emission_method']}_{self.config['num_seq']//1000}kData_{lr}lr_{rnn.best_loss:.1f}Loss.pth"
+        final_model_path = self.models_path / final_model_filename
+        torch.save(rnn.state_dict(), final_model_path)
+        print(f"Final model saved to {final_model_path}")
+        
+        # Run tests and reverse analysis for the final model
+        test_results = self.run_tests(hmm, rnn)
+        pca_results = self.run_reverse(rnn)
+        
+        # Record end time
+        end_time = datetime.datetime.now()
+        duration = (end_time - start_time).total_seconds() / 60  # in minutes
+        
+        # Construct results dictionary
+        results = {
+            "config": self.config,
+            "best_loss": float(rnn.best_loss),
+            "learning_rate": lr,
+            "train_losses": rnn.train_losses,
+            "val_losses": rnn.val_losses,
+            "test_results": test_results,
+            "pca_results": pca_results,
+            "experiment_duration_minutes": float(duration),
+            "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # Save results
+        results_path = self.config_dir / "results.pkl"
+        with open(results_path, "wb") as f:
+            pickle.dump(results, f)
+        
+        # Save a summary as JSON
+        summary = {
+            "config_name": self.config_name,
+            "hmm": {
+                "states": self.config["states"],
+                "outputs": self.config["outputs"],
+                "emission_method": self.config["emission_method"]
+            },
+            "rnn": {
+                "hidden_size": self.config["hidden_size"]
+            },
+            "best_loss": float(rnn.best_loss),
+            "learning_rate": lr,
+            "experiment_duration_minutes": float(duration),
+            "start_time": results["start_time"],
+            "end_time": results["end_time"],
+            "explained_variance": pca_results["explained_variance"].tolist() if isinstance(pca_results["explained_variance"], np.ndarray) else pca_results["explained_variance"]
+        }
+        
+        summary_path = self.config_dir / "summary.json"
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=4)
+        
+        print(f"Experiment results saved to {results_path}")
+        print(f"Experiment summary saved to {summary_path}")
+        print(f"Experiment completed in {duration:.2f} minutes")
+        
+        # Clear GPU memory
+        self.clear_gpu_memory()
+        
+        return results
+
     def find_fixed_points(self, num_initial_states=100, seq_len=None, dynamics_mode="recurrence_only", model_path=None, plot=True, plot_traj=True, num_traj=10, plot_unique=True):
         """
         Find fixed points in the latent space of the trained RNN and optionally plot them.

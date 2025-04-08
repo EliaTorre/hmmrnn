@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from sklearn.decomposition import PCA
 from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
 from scripts.rnn import RNN
 from scipy import linalg
 import itertools
@@ -571,6 +572,56 @@ def rnn_var(model_path, n_states=1000, n_samples=1000):
             types['ih_relu_hh'][i, j] = torch.relu(x_ih + h[i] @ hh.T) - h[i]
     return h, types
 
+def magnitude(h, types, plot_3d=False):
+    h_np = h.cpu().numpy()
+
+    magnitudes = {
+        'ih_relu_hh': types['ih_relu_hh'].norm(dim=2).mean(dim=1).cpu().numpy(),
+        'hh_relu': types['hh_relu'].norm(dim=2).mean(dim=1).cpu().numpy(),
+        'ih_relu': types['ih_relu'].norm(dim=2).mean(dim=1).cpu().numpy()
+    }
+
+    pca = PCA(n_components=3)
+    h_pca = pca.fit_transform(h_np)
+
+    all_magnitudes = np.concatenate(list(magnitudes.values()))
+    vmin = all_magnitudes.min()
+    vmax = all_magnitudes.max()
+
+    if plot_3d:
+        fig = plt.figure(figsize=(15, 5))
+        axes = [fig.add_subplot(1, 3, i+1, projection='3d') for i in range(3)]
+    else:
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    types_to_plot = ['ih_relu_hh', 'hh_relu', 'ih_relu']
+    for i, type_name in enumerate(types_to_plot):
+        ax = axes[i]
+        magnitude_np = magnitudes[type_name]
+        
+        if plot_3d:
+            scatter = ax.scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], 
+                               c=magnitude_np, vmin=vmin, vmax=vmax, cmap='viridis', s=1)
+            ax.set_xlabel('PC1')
+            ax.set_ylabel('PC2')
+            ax.set_zlabel('PC3')
+        else:
+            scatter = ax.scatter(h_pca[:, 0], h_pca[:, 1], 
+                               c=magnitude_np, vmin=vmin, vmax=vmax, cmap='viridis', s=1)
+            ax.set_xlabel('PC1')
+            ax.set_ylabel('PC2')
+        
+        ax.set_title(type_name.replace('_', ' + '))
+    
+    # Add shared color bar
+    norm = Normalize(vmin=vmin, vmax=vmax)
+    sm = ScalarMappable(cmap='viridis', norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=axes, orientation='horizontal', fraction=0.1, pad=0.2)
+    cbar.set_label('Average L2 Norm of Steps')
+    
+    plt.show()
+
 def cumvars(types, use_temp=True):
     n_states, n_samples, n_components = types['ih'].shape
     results = {}
@@ -827,18 +878,103 @@ def noise_cos(model_path, n_states=1000, n_samples=1000):
     plt.show()
 
 def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
-    """
-    Analyzes RNN dynamics by generating a trajectory and creating a 3x5 plot grid.
-    Rows represent step modalities: recurrent only, input only, full step.
-    Columns represent coloring schemes based on Jacobian eigenvalues.
-    
-    Args:
-        model_path (str): Path to the trained RNN model
-        num_points (int): Number of trajectory points (default: 10000)
-        epsilon (float): Threshold for eigenvalues near 1 (default: 0.05)
-        delta (float): Threshold for significant imaginary parts (default: 0.01)
-    """
-    # Load model
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+    device = ih.device
+
+    def rec_only_step(h_prev):
+        return torch.relu(hh.T @ h_prev)
+
+    def input_only_step(h_prev):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        return torch.relu(h_prev + x @ ih.T)
+
+    def full_step(h_prev):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        return torch.relu(hh.T @ h_prev + x @ ih.T)
+
+    h = torch.zeros((num_points, 150)).to(device)
+    for i in range(1, num_points):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
+
+    # Define modalities
+    modalities = {
+        'rec_only': rec_only_step,
+        'input_only': input_only_step,
+        'full': full_step
+    }
+
+    metrics = {}
+    for modality in modalities:
+        metrics[modality] = {
+            'max_magnitude': np.zeros(num_points),
+            'num_above_1': np.zeros(num_points),
+            'num_near_1': np.zeros(num_points),
+            'max_imag': np.zeros(num_points),
+            'num_with_imag': np.zeros(num_points),
+            'rank': np.zeros(num_points)
+        }
+
+    # Compute Jacobians and metrics
+    for i in tqdm(range(num_points)):
+        h_prev = h[i].clone().requires_grad_(True)
+        for modality, step_func in modalities.items():
+            J = jacobian(step_func, h_prev)
+            eigenvalues = torch.linalg.eigvals(J)
+            magnitudes = torch.abs(eigenvalues)
+            imag_parts = eigenvalues.imag
+
+            # Existing metrics
+            metrics[modality]['max_magnitude'][i] = torch.max(magnitudes).item()
+            metrics[modality]['num_above_1'][i] = (magnitudes > 1).sum().item()
+            metrics[modality]['num_near_1'][i] = ((magnitudes > 1 - epsilon) & 
+                                                 (magnitudes < 1 + epsilon)).sum().item()
+            metrics[modality]['max_imag'][i] = torch.max(torch.abs(imag_parts)).item()
+            metrics[modality]['num_with_imag'][i] = (torch.abs(imag_parts) > delta).sum().item()
+
+            # Compute rank using SVD
+            U, S, Vh = torch.svd(J)
+            tolerance = 1e-10
+            rank = torch.sum(S > tolerance).item()
+            metrics[modality]['rank'][i] = rank
+
+    # Perform PCA
+    pca = PCA(n_components=2)
+    h_2d = pca.fit_transform(h.cpu().numpy())
+
+    # Create 3x6 plot grid 
+    fig, axes = plt.subplots(3, 6, figsize=(30, 15))
+    fig.suptitle('RNN Dynamics Analysis', fontsize=16)
+
+    modality_names = ['Recurrent Only', 'Input Only', 'Full Step']
+    metric_names = [
+        'Max |λ|',
+        'Num |λ| > 1',
+        'Num |λ| ≈ 1',
+        'Max |Imag|',
+        'Num with Imag',
+        'Rank'
+    ]
+
+    for row, modality in enumerate(modalities):
+        for col, metric_key in enumerate(['max_magnitude', 'num_above_1', 'num_near_1', 
+                                        'max_imag', 'num_with_imag', 'rank']):
+            ax = axes[row, col]
+            scatter = ax.scatter(h_2d[:, 0], h_2d[:, 1], 
+                               c=metrics[modality][metric_key], 
+                               cmap='viridis', s=1)
+            ax.set_title(f'{modality_names[row]} - {metric_names[col]}')
+            ax.set_xlabel('PC1')
+            ax.set_ylabel('PC2')
+            fig.colorbar(scatter, ax=ax, label=metric_names[col])
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
+def jacobians_avg(model_path, num_points=10000, epsilon=0.1, delta=0.01, num_samples=100):
     rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
     rnn.load_state_dict(torch.load(model_path))
     ih = rnn.rnn.weight_ih_l0.data
@@ -878,14 +1014,29 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
             'num_above_1': np.zeros(num_points),
             'num_near_1': np.zeros(num_points),
             'max_imag': np.zeros(num_points),
-            'num_with_imag': np.zeros(num_points)
+            'num_with_imag': np.zeros(num_points),
+            'rank': np.zeros(num_points)
         }
 
     # Compute Jacobians and metrics
-    for i in range(num_points):
+    for i in tqdm(range(num_points)):
         h_prev = h[i].clone().requires_grad_(True)
         for modality, step_func in modalities.items():
-            J = jacobian(step_func, h_prev)
+            if modality == 'rec_only':
+                # Single Jacobian for recurrent-only (no noise)
+                J = jacobian(step_func, h_prev)
+            else:
+                # Average Jacobian over num_samples for input_only and full_step
+                J_sum = None
+                for _ in range(num_samples):
+                    J_sample = jacobian(step_func, h_prev)
+                    if J_sum is None:
+                        J_sum = J_sample
+                    else:
+                        J_sum += J_sample
+                J = J_sum / num_samples
+
+            # Compute eigenvalues and metrics from the Jacobian (single or averaged)
             eigenvalues = torch.linalg.eigvals(J)
             magnitudes = torch.abs(eigenvalues)
             imag_parts = eigenvalues.imag
@@ -897,12 +1048,18 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
             metrics[modality]['max_imag'][i] = torch.max(torch.abs(imag_parts)).item()
             metrics[modality]['num_with_imag'][i] = (torch.abs(imag_parts) > delta).sum().item()
 
+            # Compute rank using SVD
+            U, S, Vh = torch.svd(J)
+            tolerance = 1e-10
+            rank = torch.sum(S > tolerance).item()
+            metrics[modality]['rank'][i] = rank
+
     # Perform PCA
     pca = PCA(n_components=2)
     h_2d = pca.fit_transform(h.cpu().numpy())
 
-    # Create 3x5 plot grid
-    fig, axes = plt.subplots(3, 5, figsize=(25, 15))
+    # Create 3x6 plot grid
+    fig, axes = plt.subplots(3, 6, figsize=(30, 15))
     fig.suptitle('RNN Dynamics Analysis', fontsize=16)
 
     modality_names = ['Recurrent Only', 'Input Only', 'Full Step']
@@ -911,12 +1068,13 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
         'Num |λ| > 1',
         'Num |λ| ≈ 1',
         'Max |Imag|',
-        'Num with Imag'
+        'Num with Imag',
+        'Rank'
     ]
 
     for row, modality in enumerate(modalities):
         for col, metric_key in enumerate(['max_magnitude', 'num_above_1', 'num_near_1', 
-                                        'max_imag', 'num_with_imag']):
+                                        'max_imag', 'num_with_imag', 'rank']):
             ax = axes[row, col]
             scatter = ax.scatter(h_2d[:, 0], h_2d[:, 1], 
                                c=metrics[modality][metric_key], 
@@ -925,6 +1083,111 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
             ax.set_xlabel('PC1')
             ax.set_ylabel('PC2')
             fig.colorbar(scatter, ax=ax, label=metric_names[col])
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
+def jacobians_dir(model_path, num_points=10000, epsilon=0.1, delta=0.01):
+    # Load model
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+    device = ih.device
+
+    def rec_only_step(h_prev):
+        return torch.relu(hh.T @ h_prev)
+
+    def input_only_step(h_prev):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        return torch.relu(h_prev + x @ ih.T)
+
+    def full_step(h_prev):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        return torch.relu(hh.T @ h_prev + x @ ih.T)
+
+    # Generate trajectory with full step
+    h = torch.zeros((num_points, 150)).to(device)
+    for i in range(1, num_points):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
+
+    # Initialize metrics storage for full step only
+    metrics = {
+        'full': {
+            'max_magnitude': np.zeros(num_points),
+            'num_above_1': np.zeros(num_points)
+        }
+    }
+
+    # Compute Jacobians and metrics for full step only
+    for i in range(num_points):
+        h_prev = h[i].clone().requires_grad_(True)
+        J = jacobian(full_step, h_prev)
+        eigenvalues = torch.linalg.eigvals(J)
+        magnitudes = torch.abs(eigenvalues)
+
+        metrics['full']['max_magnitude'][i] = torch.max(magnitudes).item()
+        metrics['full']['num_above_1'][i] = (magnitudes > 1).sum().item()
+
+    # Perform PCA
+    pca = PCA(n_components=2)
+    h_2d = pca.fit_transform(h.cpu().numpy())
+    
+    # Find points where max |λ| > 1.8 and num |λ| > 1 = 1 for full step
+    condition = (metrics['full']['max_magnitude'] > 1.8) & (metrics['full']['num_above_1'] == 1)
+    indices = np.where(condition)[0]
+    
+    # Select a subset of points (e.g., first 150) to avoid cluttering the plot
+    selected_indices = indices[:150] if len(indices) > 150 else indices
+
+    # Compute directions at these points, accounting for orientation
+    directions_2d = []
+    positions_2d = []
+    for i in selected_indices:
+        h_prev = h[i].clone().requires_grad_(True)
+        J = jacobian(full_step, h_prev)
+        
+        # Compute eigenvalues and eigenvectors
+        evals, evecs = torch.linalg.eig(J)
+        magnitudes = torch.abs(evals)
+        
+        # Find the dominant eigenvalue
+        idx = torch.argmax(magnitudes)
+        dominant_eval = evals[idx]
+        dominant_evec = evecs[:, idx]
+        v = dominant_evec.real
+        
+        # Normalize the eigenvector
+        v = v / torch.norm(v)
+        
+        # Adjust orientation based on the sign of the real part of the eigenvalue
+        if dominant_eval.real < 0:
+            v = -v  # Flip the direction if eigenvalue is negative
+        
+        # Project to 2D PCA space
+        v_2d = pca.transform(v.cpu().numpy().reshape(1, -1))[0]
+        
+        directions_2d.append(v_2d)
+        positions_2d.append(h_2d[i])
+
+    # Create single plot for Full Step - Max |λ|
+    fig, ax = plt.subplots(figsize=(10, 8))
+    fig.suptitle('RNN Dynamics: Full Step - Max |λ| (Orientation Adjusted)', fontsize=16)
+
+    # Scatter plot with max |λ| coloring
+    scatter = ax.scatter(h_2d[:, 0], h_2d[:, 1], 
+                         c=metrics['full']['max_magnitude'], 
+                         cmap='viridis', s=1)
+    ax.set_title('Full Step - Max |λ|')
+    ax.set_xlabel('PC1')
+    ax.set_ylabel('PC2')
+    fig.colorbar(scatter, ax=ax, label='Max |λ|')
+
+    # Add direction arrows with corrected orientation
+    for pos, direction in zip(positions_2d, directions_2d):
+        ax.arrow(pos[0], pos[1], direction[0] * 0.5, direction[1] * 0.5,
+                 head_width=0.1, head_length=0.2, fc='red', ec='red')
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()

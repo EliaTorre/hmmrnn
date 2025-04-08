@@ -90,7 +90,7 @@ class HMMTwo(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500,  # Reduced epochs for faster execution
+        "epochs": 200, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -99,7 +99,7 @@ class HMMTwo(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 30
+        "seq_len": 100
     }
 
 class HMMThree(DefaultConfig):
