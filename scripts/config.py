@@ -102,6 +102,38 @@ class HMMTwo(DefaultConfig):
         "seq_len": 100
     }
 
+class HMMTwo_250(DefaultConfig):
+    """Configuration for a small HMM experiment (2 states, 3 outputs)"""
+    HMM = {
+        "states": 2,
+        "outputs": 3,
+        "stay_prob": 0.95,
+        "target_prob": 0.05,
+        "transition_method": "target_prob",
+        "emission_method": "linear"
+    }
+
+    RNN = {
+        "input_size": 100,
+        "hidden_size": 250,
+        "num_layers": 1,
+        "biased": [False, False] 
+    }  
+
+    TRAINING = {
+        "batch_size": 4096,
+        "epochs": 200, 
+        "learning_rates": [0.001],
+        "tau": 1.0,
+        "grad_clip": 0.9,
+        "init": True
+    }
+
+    DATA = {
+        "num_seq": 30000,
+        "seq_len": 100
+    }
+
 class HMMThree(DefaultConfig):
     """Configuration for a small HMM experiment (3 states, 3 outputs)"""
     HMM = {
