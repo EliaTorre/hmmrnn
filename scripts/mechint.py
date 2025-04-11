@@ -152,7 +152,7 @@ def analyze_weight_matrices_svd(rnn):
     return ih_directions, hh_directions, S_ih, S_hh
 
 def flow_field(model_path, use_relu=True, alignment_method="cosine", input_size=100, hidden_size=150, 
-                         num_layers=1, output_size=3, biased=[False, False], pc1=None, pc2=None, color_by="alignment"):
+                         num_layers=1, output_size=3, biased=[False, False], pc1=None, pc2=None, color_by="alignment", num_states=None):
     rnn = load_model(model_path, input_size, hidden_size, num_layers, output_size, biased)
     rnn_data = generate_sequences(rnn)
     pca, pca_result = perform_pca(rnn_data["h"])

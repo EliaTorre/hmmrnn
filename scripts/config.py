@@ -102,7 +102,7 @@ class HMMTwo(DefaultConfig):
         "seq_len": 100
     }
 
-class HMMTwo_250(DefaultConfig):
+class HMMTwo_Noise100(DefaultConfig):
     """Configuration for a small HMM experiment (2 states, 3 outputs)"""
     HMM = {
         "states": 2,
@@ -122,7 +122,7 @@ class HMMTwo_250(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 200, 
+        "epochs": 400, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -206,5 +206,5 @@ class HMMFive(DefaultConfig):
 
     DATA = {
         "num_seq": 30000,
-        "seq_len": 100
+        "seq_len": 40
     }

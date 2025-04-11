@@ -46,8 +46,9 @@ class Reverse:
             "explained_variance": self.pca.explained_variance_ratio_
         }
     
-    def plot_2d(self, num_points=1000, save_path=None):
-        fig, ax = plt.subplots(figsize=(8, 6))
+    def plot_2d(self, num_points=1000, save_path=None, model_info=None):
+        # Increase figure size to accommodate title and subtitle
+        fig, ax = plt.subplots(figsize=(10, 8))
         
         # Draw arrows for transitions
         for i in range(min(num_points, len(self.pca_hiddens)-1)):
@@ -60,10 +61,23 @@ class Reverse:
             ax.arrow(start[0], start[1], dx, dy, color=color,
                     head_width=0.4, head_length=0.4, length_includes_head=True)
         
-        ax.set_title("PCA Projection of RNN Hidden States (2D)")
-        ax.set_xlabel("PC1")
-        ax.set_ylabel("PC2")
+        # Add model info as suptitle if provided
+        if model_info:
+            states_info = f"States: {model_info['states']}, " if 'states' in model_info else ""
+            hidden_info = f"Hidden: {model_info['hidden_size']}, " if 'hidden_size' in model_info else ""
+            input_info = f"Input: {model_info['input_size']}" if 'input_size' in model_info else ""
+            model_info_str = f"{states_info}{hidden_info}{input_info}"
+            plt.suptitle(model_info_str, fontsize=12, y=0.98)
+            
+        # Add title with padding
+        ax.set_title("PCA Projection of RNN Hidden States (2D)", fontsize=16, fontweight="bold", pad=20)
+            
+        ax.set_xlabel("PC1", fontsize=12)
+        ax.set_ylabel("PC2", fontsize=12)
         ax.grid(True)
+        
+        # Add padding to ensure no overlap
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         
         if save_path:
             plt.savefig(save_path)
@@ -71,7 +85,7 @@ class Reverse:
         
         return fig, ax
     
-    def plot_3d(self, num_points=1000, save_path=None, cone_scale=0.1):
+    def plot_3d(self, num_points=1000, save_path=None, cone_scale=0.1, model_info=None):
         fig = go.Figure()
         
         # Draw lines for transitions
@@ -111,8 +125,18 @@ class Reverse:
                 anchor="tail"
             ))
         
+        # Create title with model info if provided
+        title = "3D PCA Projection of RNN Hidden States"
+        if model_info:
+            states_info = f"States: {model_info['states']}, " if 'states' in model_info else ""
+            hidden_info = f"Hidden: {model_info['hidden_size']}, " if 'hidden_size' in model_info else ""
+            input_info = f"Input: {model_info['input_size']}" if 'input_size' in model_info else ""
+            model_info_str = f"{states_info}{hidden_info}{input_info}"
+            subtitle = f"<br><span style='font-size:12px; font-weight:normal'>{model_info_str}</span>"
+            title = title + subtitle
+        
         fig.update_layout(
-            title="3D PCA Projection of RNN Hidden States",
+            title=title,
             scene=dict(
                 xaxis_title="PC1",
                 yaxis_title="PC2",
@@ -126,17 +150,17 @@ class Reverse:
         
         return fig
     
-    def run_analysis(self, dynamics_mode="full", save_path=""):
+    def run_analysis(self, dynamics_mode="full", save_path="", model_info=None):
         # Generate data and run PCA
         data = self.gen_data(dynamics_mode)
         
         # Create 2D plot
         print("Generating 2D PCA trajectory plot...")
-        self.plot_2d(save_path=f"{save_path}/latent_trajectory_2d.pdf")
+        self.plot_2d(save_path=f"{save_path}/latent_trajectory_2d.pdf", model_info=model_info)
         
         # Create 3D plot
         print("Generating 3D PCA trajectory plot...")
-        self.plot_3d(save_path=f"{save_path}/latent_trajectory_3d.html")
+        self.plot_3d(save_path=f"{save_path}/latent_trajectory_3d.html", model_info=model_info)
         
         return {
             "explained_variance": self.pca.explained_variance_ratio_,

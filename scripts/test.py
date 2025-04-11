@@ -201,21 +201,32 @@ class Test:
             }
         }
     
-    def gen_plots(self, results, save_path=""):
+    def gen_plots(self, results, save_path="", model_info=None):
         """
         Generate and save comparison plots.
         
         Args:
             results (dict): Results from run_all()
             save_path (str): Path to save plots
+            model_info (dict, optional): Dictionary containing model information
         """
         print("Generating comparison plots...")
         
+        # Extract model info if provided
+        states_info = f"States: {model_info['states']}, " if model_info and 'states' in model_info else ""
+        hidden_info = f"Hidden: {model_info['hidden_size']}, " if model_info and 'hidden_size' in model_info else ""
+        input_info = f"Input: {model_info['input_size']}" if model_info and 'input_size' in model_info else ""
+        model_info_str = f"{states_info}{hidden_info}{input_info}"
+        
         # 1. Euclidean distance plot
-        plt.figure(figsize=(4, 4))
+        plt.figure(figsize=(5, 5))
         x_positions = [0, 0.5]
         hmm_distances = results["distances"]["hmm_distances"]
         rnn_distances = results["distances"]["rnn_distances"]
+        
+        # Use suptitle for model info to avoid overlap
+        if model_info_str:
+            plt.suptitle(model_info_str, fontsize=12, y=0.98)
         
         plt.errorbar(x_positions[0], np.mean(hmm_distances), 
                      yerr=np.std(hmm_distances), fmt='o', color='darkgreen', capsize=3)
@@ -227,16 +238,21 @@ class Test:
                                            [np.std(hmm_distances), np.std(rnn_distances)])):
             plt.text(x_positions[i], mean + std + 0.1, f"{mean:.2f}", ha='center', fontsize=8)
             
-        plt.title("Mean Euclidean Distances", fontsize=16, fontweight="bold")
+        plt.title(f"Mean Euclidean Distances", fontsize=16, fontweight="bold", pad=20)
         plt.ylabel("Distance")
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.savefig(f"{save_path}/euclidean_distances.pdf")
         plt.close()
         
         # 2. Observation volatilities
-        plt.figure(figsize=(4, 4))
+        plt.figure(figsize=(5, 5))
         x_positions = [0, 0.5]
         hmm_vol = results["volatilities"]["hmm"]
         rnn_vol = results["volatilities"]["rnn"]
+        
+        # Use suptitle for model info to avoid overlap
+        if model_info_str:
+            plt.suptitle(model_info_str, fontsize=12, y=0.98)
         
         plt.errorbar(x_positions[0], hmm_vol[0], yerr=hmm_vol[1], 
                      fmt='o', color='darkred', capsize=3)
@@ -247,18 +263,23 @@ class Test:
         for i, (mean, std) in enumerate(zip([hmm_vol[0], rnn_vol[0]], [hmm_vol[1], rnn_vol[1]])):
             plt.text(x_positions[i], mean + std + 1, f"{mean:.2f}", ha='center', fontsize=8)
             
-        plt.title("Observation Volatilities", fontsize=16, fontweight="bold")
+        plt.title(f"Observation Volatilities", fontsize=16, fontweight="bold", pad=20)
         plt.ylabel("# of Changes in Outputs")
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.savefig(f"{save_path}/observation_volatilities.pdf")
         plt.close()
         
         # 3. Output frequencies
         bar_width = 0.4
         indices = np.arange(self.outputs)
-        plt.figure(figsize=(8, 6))
+        plt.figure(figsize=(9, 7))
         
         hmm_freqs = results["frequencies"]["hmm"]
         rnn_freqs = results["frequencies"]["rnn"]
+        
+        # Use suptitle for model info to avoid overlap
+        if model_info_str:
+            plt.suptitle(model_info_str, fontsize=12, y=0.98)
         
         plt.errorbar(indices - bar_width / 2, hmm_freqs[0], yerr=hmm_freqs[1], 
                      fmt='o', label="HMM", color="darkgreen", capsize=3)
@@ -273,21 +294,31 @@ class Test:
                      f"{rnn_value:.2f}", fontsize=10, ha="center", va="bottom")
             
         plt.xticks(indices, [f"Output {i + 1}" for i in range(self.outputs)])
-        plt.title("Output Frequencies", fontsize=16, fontweight="bold")
+        plt.title(f"Output Frequencies", fontsize=16, fontweight="bold", pad=20)
         plt.ylabel("Frequency")
         plt.legend()
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.savefig(f"{save_path}/output_frequencies.pdf")
         plt.close()
         
         # 4. Transition matrices
-        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+        fig, axs = plt.subplots(1, 2, figsize=(14, 6))  # Increased width to accommodate colorbar
         
         hmm_trans = results["transitions"]["hmm"]
         rnn_trans = results["transitions"]["rnn"]
         
+        # Use suptitle for main title and model info with proper spacing
+        plt.suptitle(f'Transition Matrices between Outputs', fontsize=16, fontweight='bold', y=0.98)
+        if model_info_str:
+            plt.figtext(0.5, 0.92, f"{model_info_str}", ha='center', fontsize=12)
+        
+        # Create a common colorbar for both matrices
+        vmin = min(hmm_trans.min(), rnn_trans.min())
+        vmax = max(hmm_trans.max(), rnn_trans.max())
+        
         for ax, matrix, title in zip(axs, [hmm_trans, rnn_trans], ["HMM", "RNN"]):
-            cax = ax.matshow(matrix, cmap="Blues", alpha=0.6)
-            ax.set_title(title, fontsize=14, fontweight="bold")
+            cax = ax.matshow(matrix, cmap="Blues", alpha=0.6, vmin=vmin, vmax=vmax)
+            ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
             ax.set_xticks(np.arange(self.outputs))
             ax.set_yticks(np.arange(self.outputs))
             ax.set_xticklabels(np.arange(1, self.outputs + 1))
@@ -296,9 +327,12 @@ class Test:
             for i in range(self.outputs):
                 for j in range(self.outputs):
                     ax.text(j, i, f"{matrix[i, j]:.2f}", va="center", ha="center")
-                    
-        fig.colorbar(cax, ax=axs.ravel().tolist(), shrink=0.95)
-        plt.suptitle('Transition Matrices between Outputs', fontsize=16, fontweight='bold')
+        
+        # Add colorbar with proper spacing
+        #cbar = fig.colorbar(cax, ax=axs, shrink=0.8, pad=0.02)
+        
+        # Adjust layout to prevent overlap
+        plt.tight_layout(rect=[0, 0, 0.95, 0.9])
         plt.savefig(f"{save_path}/transition_matrices.pdf")
         plt.close()
         

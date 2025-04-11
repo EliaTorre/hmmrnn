@@ -7,6 +7,7 @@ import json
 import datetime
 from pathlib import Path
 import importlib
+import random
 
 from scripts.hmm import HMM
 from scripts.rnn import RNN
@@ -282,8 +283,13 @@ class Manager:
         # Run tests
         test_results = model_tester.run_all()
         
-        # Generate plots
-        model_tester.gen_plots(test_results, save_path=self.figs_path)
+        # Generate plots with model info
+        model_info = {
+            "states": self.config["states"],
+            "hidden_size": self.config["hidden_size"],
+            "input_size": self.config["input_size"]
+        }
+        model_tester.gen_plots(test_results, save_path=self.figs_path, model_info=model_info)
         
         # Save test results
         test_results_path = self.config_dir / "test_results.pkl"
@@ -334,10 +340,18 @@ class Manager:
             outputs=self.config["outputs"]
         )
         
+        # Create model info dictionary
+        model_info = {
+            "states": self.config["states"],
+            "hidden_size": self.config["hidden_size"],
+            "input_size": self.config["input_size"]
+        }
+        
         # Run PCA analysis
         pca_results = pca_analyzer.run_analysis(
             dynamics_mode="full", 
-            save_path=self.figs_path
+            save_path=self.figs_path,
+            model_info=model_info
         )
         
         # Save PCA results
@@ -533,8 +547,8 @@ class Manager:
     def run_training_evo(self, verbose=False):
         """
         Train an RNN model on HMM data, saving intermediate models every 5 epochs (including after the first epoch).
-        Tests and plots are generated only for the final model. Intermediate models are stored in a subdirectory
-        with an '_evo' flag in the timestamp. Returns a results dictionary.
+        Tests and plots are generated only for the final model. Intermediate models are stored in a directory
+        with the timestamp. Returns a results dictionary.
         
         Args:
             verbose (bool): Whether to print detailed progress
@@ -545,11 +559,15 @@ class Manager:
         # Record start time
         start_time = datetime.datetime.now()
         print(f"Starting RNN training with evolution saving at {start_time}")
+
+        torch.seed(0)
+        random.seed(0)
+        np.random.seed(0)
+        torch.cuda.manual_seed(0)
         
-        # Modify timestamp to include '_evo' flag
-        evo_timestamp = f"{self.timestamp}_evo"
+        # Use the timestamp directly without adding '_evo'
         experiments_dir = Path("Experiments")
-        self.experiment_dir = experiments_dir / evo_timestamp
+        self.experiment_dir = experiments_dir / self.timestamp
         self.experiment_dir.mkdir(exist_ok=True)
         
         # Create config-specific folder
@@ -636,6 +654,47 @@ class Manager:
         final_model_path = self.models_path / final_model_filename
         torch.save(rnn.state_dict(), final_model_path)
         print(f"Final model saved to {final_model_path}")
+        
+        # Plot losses with additional information in the title
+        loss_plot_path = self.figs_path / "loss_curves.pdf"
+        title_prefix = f"Loss Curves - States: {self.config['states']}, Hidden: {self.config['hidden_size']}, Input: {self.config['input_size']}"
+        rnn.plot_losses(loss_plot_path, title_prefix=title_prefix)
+        
+        # Generate model evolution plot
+        try:
+            from scripts.mechint_evo import model_evolution
+            import matplotlib.pyplot as plt
+            
+            # Get the path to the evolution models directory
+            evolution_models_path = self.models_path / "evolution"
+            
+            # Get the path to the best model
+            best_model_path = final_model_path
+            
+            # Create the model evolution plot
+            evolution_plot_path = self.figs_path / "model_evolution.pdf"
+            
+            # Call model_evolution function with title prefix and model info
+            title_prefix = f"Model Evolution - States: {self.config['states']}, Hidden: {self.config['hidden_size']}, Input: {self.config['input_size']}"
+            fig = model_evolution(
+                evolution_dir=evolution_models_path,
+                best_model_path=best_model_path,
+                num_steps_best=30000,
+                num_steps_other=50,
+                best_steps_to_plot=1000,
+                title_prefix=title_prefix,
+                input_size=self.config["input_size"],
+                hidden_size=self.config["hidden_size"],
+                num_states=self.config["states"]
+            )
+            
+            # Save the figure
+            fig.savefig(evolution_plot_path)
+            plt.close(fig)
+            
+            print(f"Model evolution plot saved to {evolution_plot_path}")
+        except Exception as e:
+            print(f"Error generating model evolution plot: {str(e)}")
         
         # Run tests and reverse analysis for the final model
         test_results = self.run_tests(hmm, rnn)
@@ -761,7 +820,6 @@ class Manager:
 
         # Find fixed points
         rnn.train()
-        # Find fixed points
         all_fps, unique_fps = fpf.find_fixed_points(initial_states, inputs)
 
         # Save all fixed points to a file
