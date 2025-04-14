@@ -10,10 +10,12 @@ from pathlib import Path
 from sklearn.decomposition import PCA
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+from matplotlib.ticker import MultipleLocator
 from scripts.rnn import RNN
 from scipy import linalg
 import itertools
 from tqdm import tqdm
+import pandas as pd
 
 def load_model(model_path, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False]):
     rnn = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, output_size=output_size, biased=biased)
@@ -969,6 +971,9 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
             ax.set_title(f'{modality_names[row]} - {metric_names[col]}')
             ax.set_xlabel('PC1')
             ax.set_ylabel('PC2')
+            # Set ticks every 5 units
+            ax.xaxis.set_major_locator(MultipleLocator(5))
+            ax.yaxis.set_major_locator(MultipleLocator(5))
             fig.colorbar(scatter, ax=ax, label=metric_names[col])
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -1191,3 +1196,231 @@ def jacobians_dir(model_path, num_points=10000, epsilon=0.1, delta=0.01):
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
+
+def steps(model_path, num_points=100, num_steps=10, magnitude_filter=None):
+    # Load the model
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    rnn.eval()
+    device = rnn.device
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+
+    # Generate trajectories with full dynamics
+    time_steps = 30000
+    rnn_data = rnn.gen_seq(time_steps=time_steps, dynamics_mode="full")
+    hidden_states = rnn_data["h"]
+
+    # Perform PCA to extract first 2 PCs
+    pca = PCA(n_components=2)
+    pca_result = pca.fit_transform(hidden_states)
+    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
+
+    # Sample random points from the trajectory
+    indices = np.random.choice(hidden_states.shape[0], size=num_points, replace=False)
+    sampled_h = hidden_states[indices]
+
+    # Define dynamics types and their step computations
+    dynamics_types = [
+        {
+            "name": "Input-Driven",
+            "step_fn": lambda h_i, x: torch.relu(x @ ih.T + h_i) - h_i
+        },
+        {
+            "name": "Full Dynamics",
+            "step_fn": lambda h_i, x: torch.relu(x @ ih.T + h_i @ hh.T) - h_i
+        },
+        {
+            "name": "Recurrent-Only",
+            "step_fn": lambda h_i, x: torch.relu(h_i @ hh.T) - h_i
+        }
+    ]
+
+    # Compute average direction and magnitude for each dynamics type
+    results = []
+    for dyn in dynamics_types:
+        directions = np.zeros_like(sampled_h)  # To store average direction
+        magnitudes = np.zeros(num_points)      # To store average magnitude
+        for i in range(num_points):
+            h_i = torch.tensor(sampled_h[i], dtype=torch.float32).to(device)
+            avg_direction = torch.zeros_like(h_i)
+            magnitude_sum = 0.0
+            for _ in range(num_steps):
+                x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+                step = dyn["step_fn"](h_i, x)
+                step_np = step.cpu().detach().numpy()
+                # Compute magnitude (L2 norm)
+                mag = np.linalg.norm(step_np)
+                magnitude_sum += mag
+                # Compute direction (unit vector)
+                if mag > 1e-8:  # Avoid division by zero
+                    direction = step_np / mag
+                    avg_direction += torch.tensor(direction, dtype=torch.float32).to(device)
+            # Average direction and magnitude
+            avg_direction /= num_steps
+            avg_direction_np = avg_direction.cpu().detach().numpy()
+            # Normalize the averaged direction to ensure it's a unit vector
+            direction_norm = np.linalg.norm(avg_direction_np)
+            if direction_norm > 1e-8:
+                directions[i] = avg_direction_np / direction_norm
+            else:
+                directions[i] = avg_direction_np  # Zero direction if norm is too small
+            magnitudes[i] = magnitude_sum / num_steps
+        results.append({
+            "name": dyn["name"],
+            "directions": directions,
+            "magnitudes": magnitudes
+        })
+
+    # Create the plot with three subplots
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7), sharex=True, sharey=True)
+
+    # Set plot limits based on PCA results
+    x_min, x_max = pca_result[:, 0].min(), pca_result[:, 0].max()
+    y_min, y_max = pca_result[:, 1].min(), pca_result[:, 1].max()
+
+    # Project sampled points to PCA space
+    sampled_h_pca = pca_result[indices]
+
+    # Plot each dynamics type
+    for idx, result in enumerate(results):
+        ax = axes[idx]
+        # Apply magnitude filter if provided
+        if magnitude_filter is not None:
+            mask = result["magnitudes"] > magnitude_filter
+            filtered_directions = result["directions"][mask]
+            filtered_magnitudes = result["magnitudes"][mask]
+            filtered_sampled_h = sampled_h[mask]
+            filtered_sampled_h_pca = sampled_h_pca[mask]
+        else:
+            filtered_directions = result["directions"]
+            filtered_magnitudes = result["magnitudes"]
+            filtered_sampled_h = sampled_h
+            filtered_sampled_h_pca = sampled_h_pca
+
+        # Project next steps using averaged direction (unit step for visualization)
+        next_steps = filtered_sampled_h + filtered_directions
+        next_steps_pca = pca.transform(next_steps)
+
+        # Plot arrows
+        X = filtered_sampled_h_pca[:, 0]
+        Y = filtered_sampled_h_pca[:, 1]
+        U = next_steps_pca[:, 0] - X
+        V = next_steps_pca[:, 1] - Y
+
+        # Normalize arrow lengths for visualization
+        norm_vec = np.sqrt(U**2 + V**2)
+        U_norm = U / (norm_vec + 1e-8)
+        V_norm = V / (norm_vec + 1e-8)
+
+        # Color arrows by average magnitude
+        q = ax.quiver(X, Y, U_norm, V_norm, filtered_magnitudes, cmap='viridis')
+
+        # Set plot limits and labels
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.2f}%)")
+        ax.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.2f}%)")
+        ax.set_title(f"{result['name']} ({num_steps} Steps)")
+        ax.grid(True)
+
+        # Add colorbar
+        cbar = fig.colorbar(q, ax=ax)
+        cbar.set_label("Average Step Magnitude")
+
+    # Adjust layout and add suptitle
+    filter_text = f", Magnitude > {magnitude_filter}" if magnitude_filter is not None else ""
+    fig.suptitle(f"Average RNN Dynamics in PCA Space", fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+    return fig, axes
+
+def rnn_df(model_path, n_states=5000, n_samples=1000):
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+    device = ih.device
+
+    h = torch.zeros((30000, 150)).to(device)
+    for i in range(1, 30000):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
+
+    pca = PCA()
+    pca.fit(h.cpu().numpy())
+
+    h_sampled = h[:n_states]
+
+    hh_relu = torch.relu(h_sampled @ hh.T) - h_sampled
+
+    avg_alignment_ih_relu_ih_relu_hh = np.zeros(n_states)
+    avg_alignment_hh_relu_ih_relu_hh = np.zeros(n_states)
+    avg_alignment_ih_relu_hh_relu = np.zeros(n_states)
+    magnitude_ih_relu = np.zeros(n_states)
+    magnitude_hh_relu = np.zeros(n_states)
+    pca_dim_ih_relu = np.zeros(n_states)
+    pca_dim_ih_relu_hh = np.zeros(n_states)
+    jacobian_max_eigenvalue = np.zeros(n_states)
+    jacobian_num_eigenvalues_gt_1 = np.zeros(n_states)
+    jacobian_max_imag_part = np.zeros(n_states)
+
+    for i in tqdm(range(n_states)):
+        h_i = h_sampled[i]
+        hh_relu_i = hh_relu[i]
+
+        x_batch = torch.normal(mean=0, std=1, size=(n_samples, 100)).float().to(device)
+        x_ih_batch = x_batch @ ih.T
+
+        ih_relu_batch = torch.relu(x_ih_batch + h_i) - h_i
+        ih_relu_hh_batch = torch.relu(x_ih_batch + h_i @ hh.T) - h_i
+
+        avg_alignment_ih_relu_ih_relu_hh[i] = F.cosine_similarity(ih_relu_batch, ih_relu_hh_batch, dim=1).mean().item()
+        avg_alignment_hh_relu_ih_relu_hh[i] = F.cosine_similarity(hh_relu_i.expand_as(ih_relu_hh_batch), ih_relu_hh_batch, dim=1).mean().item()
+        avg_alignment_ih_relu_hh_relu[i] = F.cosine_similarity(ih_relu_batch, hh_relu_i.expand_as(ih_relu_batch), dim=1).mean().item()
+
+        magnitude_ih_relu[i] = torch.norm(ih_relu_batch, dim=1).mean().item()
+        magnitude_hh_relu[i] = torch.norm(hh_relu_i).item()
+
+        pca_ih = PCA()
+        pca_ih.fit(ih_relu_batch.cpu().numpy())
+        cum_var = np.cumsum(pca_ih.explained_variance_ratio_)
+        pca_dim_ih_relu[i] = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
+
+        pca_ih_hh = PCA()
+        pca_ih_hh.fit(ih_relu_hh_batch.cpu().numpy())
+        cum_var = np.cumsum(pca_ih_hh.explained_variance_ratio_)
+        pca_dim_ih_relu_hh[i] = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
+
+        pre_activation = hh.T @ h_i
+        mask = (pre_activation > 0).float()
+        J = torch.diag(mask) @ hh.T
+        eigenvalues = torch.linalg.eigvals(J).cpu().numpy()
+        magnitudes = np.abs(eigenvalues)
+        imag_parts = np.imag(eigenvalues)
+
+        jacobian_max_eigenvalue[i] = np.max(magnitudes)
+        jacobian_num_eigenvalues_gt_1[i] = np.sum(magnitudes > 1)
+        jacobian_max_imag_part[i] = np.max(np.abs(imag_parts))
+
+    # New features
+    main_align = (avg_alignment_ih_relu_ih_relu_hh > avg_alignment_hh_relu_ih_relu_hh).astype(int)
+    main_mag = (magnitude_ih_relu > magnitude_hh_relu).astype(int)
+
+    h_df = pd.DataFrame(h_sampled.cpu().numpy(), columns=[f'h_{i}' for i in range(150)])
+    df = pd.concat([h_df, pd.DataFrame({
+        'avg_alignment_ih_relu_ih_relu_hh': avg_alignment_ih_relu_ih_relu_hh,
+        'avg_alignment_hh_relu_ih_relu_hh': avg_alignment_hh_relu_ih_relu_hh,
+        'avg_alignment_ih_relu_hh_relu': avg_alignment_ih_relu_hh_relu,
+        'jacobian_recurrent_only_max_eigenvalue': jacobian_max_eigenvalue,
+        'jacobian_recurrent_only_num_eigenvalues_gt_1': jacobian_num_eigenvalues_gt_1,
+        'jacobian_recurrent_only_max_imag_part': jacobian_max_imag_part,
+        'magnitude_ih_relu_step': magnitude_ih_relu,
+        'magnitude_hh_relu_step': magnitude_hh_relu,
+        'ih_relu_step_pca_dimension': pca_dim_ih_relu,
+        'ih_relu_hh_step_pca_dimension': pca_dim_ih_relu_hh,
+        'main_align': main_align,
+        'main_mag': main_mag
+    })], axis=1)
+
+    return df, pca

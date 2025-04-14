@@ -34,7 +34,7 @@ class RNN(nn.Module):
     def forward(self, x, tau=1.0, init=True, gumbel=True):
         # Initialize hidden state
         if init:
-            h = torch.normal(mean=0, std=1/20, size=(self.num_layers, x.size(0), self.hidden_size)).to(self.device)
+            h = torch.normal(mean=0, std=1, size=(self.num_layers, x.size(0), self.hidden_size)).to(self.device)
         else:
             h = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(self.device)
             
@@ -94,8 +94,8 @@ class RNN(nn.Module):
             # Generate random noise as inputs
             train_shape = (train_seq.shape[0], train_seq.shape[1], self.input_size)
             val_shape = (val_seq.shape[0], val_seq.shape[1], self.input_size)
-            train_noise = torch.normal(mean=0, std=1/20, size=train_shape).to(self.device)
-            val_noise = torch.normal(mean=0, std=1/20, size=val_shape).to(self.device)
+            train_noise = torch.normal(mean=0, std=1, size=train_shape).to(self.device)
+            val_noise = torch.normal(mean=0, std=1, size=val_shape).to(self.device)
             
             # Training phase
             self.train()
@@ -198,7 +198,7 @@ class RNN(nn.Module):
                 
                 # Generate the rest of the sequence
                 for t in range(1, seq_len):
-                    x = torch.normal(mean=0, std=1/20, size=(self.input_size,)).float().to(self.device)
+                    x = torch.normal(mean=0, std=1, size=(self.input_size,)).float().to(self.device)
                     if dynamics_mode == 'full':
                         h[i, t] = torch.relu(x @ ih.T + h[i, t-1] @ hh.T)
                     elif dynamics_mode == 'recurrence_only':
@@ -224,7 +224,7 @@ class RNN(nn.Module):
             
             # Generate hidden states
             for t in range(1, time_steps):
-                x = torch.normal(mean=0, std=1/20, size=(self.input_size,)).float().to(self.device)
+                x = torch.normal(mean=0, std=1, size=(self.input_size,)).float().to(self.device)
                 if dynamics_mode == 'full':
                     h[t] = torch.relu(x @ ih.T + h[t-1] @ hh.T)
                 elif dynamics_mode == 'recurrence_only':

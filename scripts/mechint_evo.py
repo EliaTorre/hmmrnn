@@ -16,13 +16,13 @@ def get_model_files(directory):
 def model_evolution(evolution_dir, best_model_path, num_steps_best=30000, num_steps_other=50, best_steps_to_plot=0, title_prefix=None, input_size=100, hidden_size=150, num_states=None):
     evolution_dir = Path(evolution_dir)
     best_model_path = Path(best_model_path)
-    rnn_best = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False])
+    rnn_best = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, output_size=3, biased=[False, False])
     rnn_best.load_model(str(best_model_path))
     ih = rnn_best.rnn.weight_ih_l0.data
     hh = rnn_best.rnn.weight_hh_l0.data
-    h_best = torch.zeros((num_steps_best, 150)).to(ih.device)
+    h_best = torch.zeros((num_steps_best, hidden_size)).to(ih.device)
     for i in range(1, num_steps_best):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
+        x = torch.normal(mean=0, std=1, size=(input_size,)).float().to(ih.device)
         h_best[i] = torch.relu(x @ ih.T + h_best[i-1] @ hh.T)
     h_best_np = h_best.cpu().numpy()
 
@@ -47,13 +47,13 @@ def model_evolution(evolution_dir, best_model_path, num_steps_best=30000, num_st
         epoch = int(re.search(r'model_epoch_(\d+).pth', model_file).group(1))
         if epoch not in desired_epochs:
             continue  # Skip models not in the desired epochs
-        rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False])
+        rnn = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, output_size=3, biased=[False, False])
         rnn.load_model(model_file)
         ih = rnn.rnn.weight_ih_l0.data
         hh = rnn.rnn.weight_hh_l0.data
-        h_other = torch.zeros((num_steps_other, 150)).to(ih.device)
+        h_other = torch.zeros((num_steps_other, hidden_size)).to(ih.device)
         for i in range(1, num_steps_other):
-            x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
+            x = torch.normal(mean=0, std=1, size=(input_size,)).float().to(ih.device)
             h_other[i] = torch.relu(x @ ih.T + h_other[i-1] @ hh.T)
             if torch.norm(h_other[i]) > 1000:
                 h_other[i] = h_other[i]/(torch.norm(h_other[i]) * 1000)
