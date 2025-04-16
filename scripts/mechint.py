@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -887,7 +886,7 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
     device = ih.device
 
     def rec_only_step(h_prev):
-        return torch.relu(hh.T @ h_prev)
+        return torch.relu(h_prev @ hh.T)
 
     def input_only_step(h_prev):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
@@ -895,7 +894,7 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
 
     def full_step(h_prev):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(hh.T @ h_prev + x @ ih.T)
+        return torch.relu(h_prev @ hh.T + x @ ih.T)
 
     h = torch.zeros((num_points, 150)).to(device)
     for i in range(1, num_points):
@@ -988,7 +987,7 @@ def jacobians_avg(model_path, num_points=10000, epsilon=0.1, delta=0.01, num_sam
 
     # Define step functions
     def rec_only_step(h_prev):
-        return torch.relu(hh.T @ h_prev)
+        return torch.relu(h_prev @ hh.T)
 
     def input_only_step(h_prev):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
@@ -996,7 +995,7 @@ def jacobians_avg(model_path, num_points=10000, epsilon=0.1, delta=0.01, num_sam
 
     def full_step(h_prev):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(hh.T @ h_prev + x @ ih.T)
+        return torch.relu(h_prev @ hh.T + x @ ih.T)
 
     # Generate trajectory with full step
     h = torch.zeros((num_points, 150)).to(device)
@@ -1101,7 +1100,7 @@ def jacobians_dir(model_path, num_points=10000, epsilon=0.1, delta=0.01):
     device = ih.device
 
     def rec_only_step(h_prev):
-        return torch.relu(hh.T @ h_prev)
+        return torch.relu(h_prev @ hh.T)
 
     def input_only_step(h_prev):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
@@ -1109,7 +1108,7 @@ def jacobians_dir(model_path, num_points=10000, epsilon=0.1, delta=0.01):
 
     def full_step(h_prev):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(hh.T @ h_prev + x @ ih.T)
+        return torch.relu(h_prev @ hh.T + x @ ih.T)
 
     # Generate trajectory with full step
     h = torch.zeros((num_points, 150)).to(device)
@@ -1361,9 +1360,12 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
     magnitude_hh_relu = np.zeros(n_states)
     pca_dim_ih_relu = np.zeros(n_states)
     pca_dim_ih_relu_hh = np.zeros(n_states)
-    jacobian_max_eigenvalue = np.zeros(n_states)
-    jacobian_num_eigenvalues_gt_1 = np.zeros(n_states)
-    jacobian_max_imag_part = np.zeros(n_states)
+    jacobian_hh_max_eigenvalue = np.zeros(n_states)
+    jacobian_hh_eigenvalues_gt_1 = np.zeros(n_states)
+    jacobian_hh_max_imag_part = np.zeros(n_states)
+    jacobian_full_max_eigenvalue = np.zeros(n_states)
+    jacobian_full_eigenvalues_gt_1 = np.zeros(n_states)
+    jacobian_full_max_imag_part = np.zeros(n_states)
 
     for i in tqdm(range(n_states)):
         h_i = h_sampled[i]
@@ -1392,16 +1394,30 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
         cum_var = np.cumsum(pca_ih_hh.explained_variance_ratio_)
         pca_dim_ih_relu_hh[i] = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
 
-        pre_activation = hh.T @ h_i
-        mask = (pre_activation > 0).float()
-        J = torch.diag(mask) @ hh.T
-        eigenvalues = torch.linalg.eigvals(J).cpu().numpy()
-        magnitudes = np.abs(eigenvalues)
-        imag_parts = np.imag(eigenvalues)
+        # Recurrent-only Jacobian (hh)
+        pre_activation_hh = h_i @ hh.T 
+        mask_hh = (pre_activation_hh > 0).float()
+        J_hh = torch.diag(mask_hh) @ hh.T
+        eigenvalues_hh = torch.linalg.eigvals(J_hh).cpu().numpy()
+        magnitudes_hh = np.abs(eigenvalues_hh)
+        imag_parts_hh = np.imag(eigenvalues_hh)
 
-        jacobian_max_eigenvalue[i] = np.max(magnitudes)
-        jacobian_num_eigenvalues_gt_1[i] = np.sum(magnitudes > 1)
-        jacobian_max_imag_part[i] = np.max(np.abs(imag_parts))
+        jacobian_hh_max_eigenvalue[i] = np.max(magnitudes_hh)
+        jacobian_hh_eigenvalues_gt_1[i] = np.sum(magnitudes_hh > 1)
+        jacobian_hh_max_imag_part[i] = np.max(np.abs(imag_parts_hh))
+
+        # Full step Jacobian (ih + hh)
+        x_i = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        pre_activation_full = x_i @ ih.T + h_i @ hh.T
+        mask_full = (pre_activation_full > 0).float()
+        J_full = torch.diag(mask_full) @ hh.T
+        eigenvalues_full = torch.linalg.eigvals(J_full).cpu().numpy()
+        magnitudes_full = np.abs(eigenvalues_full)
+        imag_parts_full = np.imag(eigenvalues_full)
+
+        jacobian_full_max_eigenvalue[i] = np.max(magnitudes_full)
+        jacobian_full_eigenvalues_gt_1[i] = np.sum(magnitudes_full > 1)
+        jacobian_full_max_imag_part[i] = np.max(np.abs(imag_parts_full))
 
     # New features
     main_align = (avg_alignment_ih_relu_ih_relu_hh > avg_alignment_hh_relu_ih_relu_hh).astype(int)
@@ -1409,18 +1425,164 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
 
     h_df = pd.DataFrame(h_sampled.cpu().numpy(), columns=[f'h_{i}' for i in range(150)])
     df = pd.concat([h_df, pd.DataFrame({
-        'avg_alignment_ih_relu_ih_relu_hh': avg_alignment_ih_relu_ih_relu_hh,
-        'avg_alignment_hh_relu_ih_relu_hh': avg_alignment_hh_relu_ih_relu_hh,
-        'avg_alignment_ih_relu_hh_relu': avg_alignment_ih_relu_hh_relu,
-        'jacobian_recurrent_only_max_eigenvalue': jacobian_max_eigenvalue,
-        'jacobian_recurrent_only_num_eigenvalues_gt_1': jacobian_num_eigenvalues_gt_1,
-        'jacobian_recurrent_only_max_imag_part': jacobian_max_imag_part,
-        'magnitude_ih_relu_step': magnitude_ih_relu,
-        'magnitude_hh_relu_step': magnitude_hh_relu,
-        'ih_relu_step_pca_dimension': pca_dim_ih_relu,
-        'ih_relu_hh_step_pca_dimension': pca_dim_ih_relu_hh,
+        'avg_alignment_ih_full': avg_alignment_ih_relu_ih_relu_hh,
+        'avg_alignment_hh_full': avg_alignment_hh_relu_ih_relu_hh,
+        'avg_alignment_ih_hh': avg_alignment_ih_relu_hh_relu,
+        'jacobian_hh_max_eigenvalue': jacobian_hh_max_eigenvalue,
+        'jacobian_hh_eigenvalues_gt_1': jacobian_hh_eigenvalues_gt_1,
+        'jacobian_hh_max_imag': jacobian_hh_max_imag_part,
+        'jacobian_full_max_eigenvalue': jacobian_full_max_eigenvalue,
+        'jacobian_full_eigenvalues_gt_1': jacobian_full_eigenvalues_gt_1,
+        'jacobian_full_max_imag': jacobian_full_max_imag_part,
+        'mag_ih': magnitude_ih_relu,
+        'mag_hh': magnitude_hh_relu,
+        'ih_pca_dim': pca_dim_ih_relu,
+        'full_pca_dim': pca_dim_ih_relu_hh,
         'main_align': main_align,
         'main_mag': main_mag
     })], axis=1)
+
+    return df, pca
+
+def rnn_df_seq(model_path, n_states=5000, n_samples=1000):
+    # Load the RNN model
+    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
+    rnn.load_state_dict(torch.load(model_path))
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+    fc = rnn.fc.weight.data  # Extract fc layer weights
+    device = ih.device
+
+    # Generate 30,000 hidden states for PCA (unchanged)
+    h = torch.zeros((30000, 150)).to(device)
+    for i in range(1, 30000):
+        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
+
+    pca = PCA()
+    pca.fit(h.cpu().numpy())
+
+    # Initialize lists to store trajectory and metrics
+    h_traj = []
+    metrics = {
+        'avg_alignment_ih_full': [],
+        'avg_alignment_hh_full': [],
+        'avg_alignment_ih_hh': [],
+        'jacobian_hh_max_eigenvalue': [],
+        'jacobian_hh_eigenvalues_gt_1': [],
+        'jacobian_hh_max_imag': [],
+        'jacobian_full_max_eigenvalue': [],
+        'jacobian_full_eigenvalues_gt_1': [],
+        'jacobian_full_max_imag': [],
+        'mag_ih': [],
+        'mag_hh': [],
+        'transition': [],
+        'ih_pca_dim': [],
+        'full_pca_dim': [],
+        'main_align': [],
+        'main_mag': [],
+        'logits': [],
+    }
+
+    # Generate a new trajectory of length n_states
+    h_prev = torch.zeros(150).to(device)
+    for t in tqdm(range(n_states)):
+        x_t = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+        h_t = torch.relu(x_t @ ih.T + h_prev @ hh.T)
+
+        # Compute logits by projecting h_t onto fc layer and apply softmax
+        logits = h_t @ fc.T
+        logits = F.softmax(logits, dim=0).cpu().numpy()
+        
+        # Compute recurrent-only contribution
+        hh_relu_t = torch.relu(h_prev @ hh.T) - h_prev
+
+        # Compute input-only contribution using the same x_t
+        ih_relu_t = torch.relu(x_t @ ih.T + h_prev) - h_prev
+
+        # Compute full update
+        full_relu_t = h_t - h_prev
+
+        # Cosine similarities (single vectors)
+        cos_ih_full = F.cosine_similarity(ih_relu_t, full_relu_t, dim=0).item()
+        cos_hh_full = F.cosine_similarity(hh_relu_t, full_relu_t, dim=0).item()
+        cos_ih_hh = F.cosine_similarity(ih_relu_t, hh_relu_t, dim=0).item()
+
+        # Magnitudes
+        mag_ih = torch.norm(x_t @ ih.T).item()
+        mag_hh = torch.norm(h_prev @ hh.T).item()
+
+        # Sample x_batch for PCA analysis
+        x_batch = torch.normal(mean=0, std=1, size=(n_samples, 100)).float().to(device)
+        ih_relu_batch = torch.relu(x_batch @ ih.T + h_prev) - h_prev
+        ih_relu_hh_batch = torch.relu(x_batch @ ih.T + h_prev @ hh.T) - h_prev
+
+        # PCA for input-only contribution
+        pca_ih = PCA()
+        pca_ih.fit(ih_relu_batch.cpu().numpy())
+        cum_var = np.cumsum(pca_ih.explained_variance_ratio_)
+        ih_pca_dim = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
+
+        # PCA for full update
+        pca_ih_hh = PCA()
+        pca_ih_hh.fit(ih_relu_hh_batch.cpu().numpy())
+        cum_var = np.cumsum(pca_ih_hh.explained_variance_ratio_)
+        full_pca_dim = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
+
+        # Recurrent-only Jacobian
+        pre_activation_hh = h_prev @ hh.T
+        mask_hh = (pre_activation_hh > 0).float()
+        J_hh = torch.diag(mask_hh) @ hh.T
+        eigenvalues_hh = torch.linalg.eigvals(J_hh).cpu().numpy()
+        magnitudes_hh = np.abs(eigenvalues_hh)
+        imag_parts_hh = np.imag(eigenvalues_hh)
+        jacobian_hh_max_eigenvalue = np.max(magnitudes_hh)
+        jacobian_hh_eigenvalues_gt_1 = np.sum(magnitudes_hh > 1)
+        jacobian_hh_max_imag = np.max(np.abs(imag_parts_hh))
+
+        # Full step Jacobian (using the same x_t)
+        pre_activation_full = x_t @ ih.T + h_prev @ hh.T
+        mask_full = (pre_activation_full > 0).float()
+        J_full = torch.diag(mask_full) @ hh.T
+        eigenvalues_full = torch.linalg.eigvals(J_full).cpu().numpy()
+        magnitudes_full = np.abs(eigenvalues_full)
+        imag_parts_full = np.imag(eigenvalues_full)
+        jacobian_full_max_eigenvalue = np.max(magnitudes_full)
+        jacobian_full_eigenvalues_gt_1 = np.sum(magnitudes_full > 1)
+        jacobian_full_max_imag = np.max(np.abs(imag_parts_full))
+
+        # Main alignment and magnitude indicators
+        main_align = 1 if cos_ih_full > cos_hh_full else 0
+        main_mag = 1 if mag_ih > mag_hh else 0
+
+        # Store hidden state and metrics
+        h_traj.append(h_t.cpu().numpy())
+        metrics['avg_alignment_ih_full'].append(cos_ih_full)
+        metrics['avg_alignment_hh_full'].append(cos_hh_full)
+        metrics['avg_alignment_ih_hh'].append(cos_ih_hh)
+        metrics['jacobian_hh_max_eigenvalue'].append(jacobian_hh_max_eigenvalue)
+        metrics['jacobian_hh_eigenvalues_gt_1'].append(jacobian_hh_eigenvalues_gt_1)
+        metrics['jacobian_hh_max_imag'].append(jacobian_hh_max_imag)
+        metrics['jacobian_full_max_eigenvalue'].append(jacobian_full_max_eigenvalue)
+        metrics['jacobian_full_eigenvalues_gt_1'].append(jacobian_full_eigenvalues_gt_1)
+        metrics['jacobian_full_max_imag'].append(jacobian_full_max_imag)
+        metrics['mag_ih'].append(mag_ih)
+        metrics['mag_hh'].append(mag_hh)
+        metrics['ih_pca_dim'].append(ih_pca_dim)
+        metrics['full_pca_dim'].append(full_pca_dim)
+        metrics['main_align'].append(main_align)
+        metrics['main_mag'].append(main_mag)
+        metrics['logits'].append(logits)
+
+        # Update h_prev for next iteration
+        h_prev = h_t
+
+    argmax_values = np.array([np.argmax(logits) for logits in metrics['logits']])
+    metrics['transition'] = np.zeros(len(argmax_values), dtype=int)
+    transition_indices = np.where(argmax_values[:-1] != argmax_values[1:])[0] + 1
+    metrics['transition'][transition_indices] = 1
+    h_df = pd.DataFrame(np.array(h_traj), columns=[f'h_{i}' for i in range(150)])
+    metrics_df = pd.DataFrame(metrics)
+    df = pd.concat([h_df, metrics_df], axis=1)
 
     return df, pca
