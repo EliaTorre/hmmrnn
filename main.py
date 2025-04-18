@@ -14,7 +14,6 @@ from scripts.ReLU import visualize_flow
 
 #%%
 
-
 # Initialize a list of sequence lengths to experiment with
 #seq_lengths_2 = [30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150]
 #seq_lengths_rest = [30, 35, 40]
@@ -40,6 +39,7 @@ for name in configs:
 print("\n--- All experiments completed ---")
 
 
+#%%
 # Show the experiment directory structure
 import os
 
@@ -76,11 +76,6 @@ all_fps, unique_fps = manager.find_fixed_points(num_initial_states=1000)
 print(f"Found {len(all_fps)} total fixed points, {len(unique_fps)} unique fixed points")
 
 
-#old_models
-#/home/elia/Documents/rnnrep/old_models/2HMM_3Outputs_30kData_0.001lr_19.4Loss.pth
-#/home/elia/Documents/rnnrep/old_models/3HMM_3Outputs_30kData_0.001lr_31.9Loss.pth
-#/home/elia/Documents/rnnrep/old_models/4HMM_3Outputs_30kData_0.001lr_33.2Loss.pth
-#/home/elia/Documents/rnnrep/old_models/5HMM_3Outputs_30kData_0.001lr_37.3Loss.pth
 manager = Manager()
 all_fps, unique_fps = manager.find_fixed_points(num_initial_states=1000, num_traj=10, plot_unique=True, model_path="/home/elia/Documents/rnnrep/old_models/5HMM_3Outputs_30kData_0.001lr_37.3Loss.pth")
 print(f"Found {len(all_fps)} total fixed points, {len(unique_fps)} unique fixed points")
