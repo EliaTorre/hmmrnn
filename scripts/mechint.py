@@ -1476,7 +1476,6 @@ def rnn_df_seq(model_path, n_states=5000, n_samples=1000):
         'jacobian_full_max_imag': [],
         'mag_ih': [],
         'mag_hh': [],
-        'transition': [],
         'ih_pca_dim': [],
         'full_pca_dim': [],
         'main_align': [],
@@ -1496,9 +1495,11 @@ def rnn_df_seq(model_path, n_states=5000, n_samples=1000):
         
         # Compute recurrent-only contribution
         hh_relu_t = torch.relu(h_prev @ hh.T) - h_prev
+        #hh_relu_t = torch.relu(h_prev @ hh.T)
 
         # Compute input-only contribution using the same x_t
         ih_relu_t = torch.relu(x_t @ ih.T + h_prev) - h_prev
+        #ih_relu_t = torch.relu(x_t @ ih.T)
 
         # Compute full update
         full_relu_t = h_t - h_prev
@@ -1509,8 +1510,10 @@ def rnn_df_seq(model_path, n_states=5000, n_samples=1000):
         cos_ih_hh = F.cosine_similarity(ih_relu_t, hh_relu_t, dim=0).item()
 
         # Magnitudes
-        mag_ih = torch.norm(x_t @ ih.T).item()
-        mag_hh = torch.norm(h_prev @ hh.T).item()
+        #mag_ih = torch.norm(torch.relu(x_t @ ih.T + h_prev) - h_prev).item()
+        #mag_hh = torch.norm(torch.relu(h_prev @ hh.T) - h_prev).item()
+        mag_ih = torch.norm(torch.relu(x_t @ ih.T)).item()
+        mag_hh = torch.norm(torch.relu(h_prev @ hh.T)).item()
 
         # Sample x_batch for PCA analysis
         x_batch = torch.normal(mean=0, std=1, size=(n_samples, 100)).float().to(device)
@@ -1577,10 +1580,18 @@ def rnn_df_seq(model_path, n_states=5000, n_samples=1000):
         # Update h_prev for next iteration
         h_prev = h_t
 
-    argmax_values = np.array([np.argmax(logits) for logits in metrics['logits']])
-    metrics['transition'] = np.zeros(len(argmax_values), dtype=int)
-    transition_indices = np.where(argmax_values[:-1] != argmax_values[1:])[0] + 1
-    metrics['transition'][transition_indices] = 1
+    # Compute transition codes: 0 = no transition, 1 = 0→2, 2 = 2→0
+    argmax_values = np.array([np.argmax(l) for l in metrics['logits']])
+    transition = np.zeros(len(argmax_values), dtype=int)
+    for i in range(1, len(argmax_values)):
+        prev, curr = argmax_values[i-1], argmax_values[i]
+        if prev == 0 and curr == 2:
+            transition[i] = 1
+        elif prev == 2 and curr == 0:
+            transition[i] = 2
+    metrics['transition'] = transition
+
+    # Build final DataFrame
     h_df = pd.DataFrame(np.array(h_traj), columns=[f'h_{i}' for i in range(150)])
     metrics_df = pd.DataFrame(metrics)
     df = pd.concat([h_df, metrics_df], axis=1)
