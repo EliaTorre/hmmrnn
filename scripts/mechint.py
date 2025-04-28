@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from pathlib import Path
 from sklearn.decomposition import PCA
+from scipy.stats import mode
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from matplotlib.ticker import MultipleLocator
@@ -979,118 +980,6 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-def jacobians_avg(model_path, num_points=10000, epsilon=0.1, delta=0.01, num_samples=100):
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-    device = ih.device
-
-    # Define step functions
-    def rec_only_step(h_prev):
-        return torch.relu(h_prev @ hh.T)
-
-    def input_only_step(h_prev):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(h_prev + x @ ih.T)
-
-    def full_step(h_prev):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(h_prev @ hh.T + x @ ih.T)
-
-    # Generate trajectory with full step
-    h = torch.zeros((num_points, 150)).to(device)
-    for i in range(1, num_points):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
-
-    # Define modalities
-    modalities = {
-        'rec_only': rec_only_step,
-        'input_only': input_only_step,
-        'full': full_step
-    }
-
-    # Initialize metrics storage
-    metrics = {}
-    for modality in modalities:
-        metrics[modality] = {
-            'max_magnitude': np.zeros(num_points),
-            'num_above_1': np.zeros(num_points),
-            'num_near_1': np.zeros(num_points),
-            'max_imag': np.zeros(num_points),
-            'num_with_imag': np.zeros(num_points),
-            'rank': np.zeros(num_points)
-        }
-
-    # Compute Jacobians and metrics
-    for i in tqdm(range(num_points)):
-        h_prev = h[i].clone().requires_grad_(True)
-        for modality, step_func in modalities.items():
-            if modality == 'rec_only':
-                # Single Jacobian for recurrent-only (no noise)
-                J = jacobian(step_func, h_prev)
-            else:
-                # Average Jacobian over num_samples for input_only and full_step
-                J_sum = None
-                for _ in range(num_samples):
-                    J_sample = jacobian(step_func, h_prev)
-                    if J_sum is None:
-                        J_sum = J_sample
-                    else:
-                        J_sum += J_sample
-                J = J_sum / num_samples
-
-            # Compute eigenvalues and metrics from the Jacobian (single or averaged)
-            eigenvalues = torch.linalg.eigvals(J)
-            magnitudes = torch.abs(eigenvalues)
-            imag_parts = eigenvalues.imag
-
-            metrics[modality]['max_magnitude'][i] = torch.max(magnitudes).item()
-            metrics[modality]['num_above_1'][i] = (magnitudes > 1).sum().item()
-            metrics[modality]['num_near_1'][i] = ((magnitudes > 1 - epsilon) & (magnitudes < 1 + epsilon)).sum().item()
-            metrics[modality]['max_imag'][i] = torch.max(torch.abs(imag_parts)).item()
-            metrics[modality]['num_with_imag'][i] = (torch.abs(imag_parts) > delta).sum().item()
-
-            # Compute rank using SVD
-            U, S, Vh = torch.svd(J)
-            tolerance = 1e-10
-            rank = torch.sum(S > tolerance).item()
-            metrics[modality]['rank'][i] = rank
-
-    # Perform PCA
-    pca = PCA(n_components=2)
-    h_2d = pca.fit_transform(h.cpu().numpy())
-
-    # Create 3x6 plot grid
-    fig, axes = plt.subplots(3, 6, figsize=(30, 15))
-    fig.suptitle('RNN Dynamics Analysis', fontsize=16)
-
-    modality_names = ['Recurrent Only', 'Input Only', 'Full Step']
-    metric_names = [
-        'Max |λ|',
-        'Num |λ| > 1',
-        'Num |λ| ≈ 1',
-        'Max |Imag|',
-        'Num with Imag',
-        'Rank'
-    ]
-
-    for row, modality in enumerate(modalities):
-        for col, metric_key in enumerate(['max_magnitude', 'num_above_1', 'num_near_1', 
-                                        'max_imag', 'num_with_imag', 'rank']):
-            ax = axes[row, col]
-            scatter = ax.scatter(h_2d[:, 0], h_2d[:, 1], 
-                               c=metrics[modality][metric_key], 
-                               cmap='viridis', s=1)
-            ax.set_title(f'{modality_names[row]} - {metric_names[col]}')
-            ax.set_xlabel('PC1')
-            ax.set_ylabel('PC2')
-            fig.colorbar(scatter, ax=ax, label=metric_names[col])
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
 def jacobians_dir(model_path, num_points=10000):
     rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
     rnn.load_state_dict(torch.load(model_path))
@@ -1188,144 +1077,6 @@ def jacobians_dir(model_path, num_points=10000):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-def steps(model_path, num_points=100, num_steps=10, magnitude_filter=None):
-    # Load the model
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    rnn.eval()
-    device = rnn.device
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-
-    # Generate trajectories with full dynamics
-    time_steps = 30000
-    rnn_data = rnn.gen_seq(time_steps=time_steps, dynamics_mode="full")
-    hidden_states = rnn_data["h"]
-
-    # Perform PCA to extract first 2 PCs
-    pca = PCA(n_components=2)
-    pca_result = pca.fit_transform(hidden_states)
-    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
-
-    # Sample random points from the trajectory
-    indices = np.random.choice(hidden_states.shape[0], size=num_points, replace=False)
-    sampled_h = hidden_states[indices]
-
-    # Define dynamics types and their step computations
-    dynamics_types = [
-        {
-            "name": "Input-Driven",
-            "step_fn": lambda h_i, x: torch.relu(x @ ih.T + h_i) - h_i
-        },
-        {
-            "name": "Full Dynamics",
-            "step_fn": lambda h_i, x: torch.relu(x @ ih.T + h_i @ hh.T) - h_i
-        },
-        {
-            "name": "Recurrent-Only",
-            "step_fn": lambda h_i, x: torch.relu(h_i @ hh.T) - h_i
-        }
-    ]
-
-    # Compute average direction and magnitude for each dynamics type
-    results = []
-    for dyn in dynamics_types:
-        directions = np.zeros_like(sampled_h)  # To store average direction
-        magnitudes = np.zeros(num_points)      # To store average magnitude
-        for i in range(num_points):
-            h_i = torch.tensor(sampled_h[i], dtype=torch.float32).to(device)
-            avg_direction = torch.zeros_like(h_i)
-            magnitude_sum = 0.0
-            for _ in range(num_steps):
-                x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-                step = dyn["step_fn"](h_i, x)
-                step_np = step.cpu().detach().numpy()
-                # Compute magnitude (L2 norm)
-                mag = np.linalg.norm(step_np)
-                magnitude_sum += mag
-                # Compute direction (unit vector)
-                if mag > 1e-8:  # Avoid division by zero
-                    direction = step_np / mag
-                    avg_direction += torch.tensor(direction, dtype=torch.float32).to(device)
-            # Average direction and magnitude
-            avg_direction /= num_steps
-            avg_direction_np = avg_direction.cpu().detach().numpy()
-            # Normalize the averaged direction to ensure it's a unit vector
-            direction_norm = np.linalg.norm(avg_direction_np)
-            if direction_norm > 1e-8:
-                directions[i] = avg_direction_np / direction_norm
-            else:
-                directions[i] = avg_direction_np  # Zero direction if norm is too small
-            magnitudes[i] = magnitude_sum / num_steps
-        results.append({
-            "name": dyn["name"],
-            "directions": directions,
-            "magnitudes": magnitudes
-        })
-
-    # Create the plot with three subplots
-    fig, axes = plt.subplots(1, 3, figsize=(20, 7), sharex=True, sharey=True)
-
-    # Set plot limits based on PCA results
-    x_min, x_max = pca_result[:, 0].min(), pca_result[:, 0].max()
-    y_min, y_max = pca_result[:, 1].min(), pca_result[:, 1].max()
-
-    # Project sampled points to PCA space
-    sampled_h_pca = pca_result[indices]
-
-    # Plot each dynamics type
-    for idx, result in enumerate(results):
-        ax = axes[idx]
-        # Apply magnitude filter if provided
-        if magnitude_filter is not None:
-            mask = result["magnitudes"] > magnitude_filter
-            filtered_directions = result["directions"][mask]
-            filtered_magnitudes = result["magnitudes"][mask]
-            filtered_sampled_h = sampled_h[mask]
-            filtered_sampled_h_pca = sampled_h_pca[mask]
-        else:
-            filtered_directions = result["directions"]
-            filtered_magnitudes = result["magnitudes"]
-            filtered_sampled_h = sampled_h
-            filtered_sampled_h_pca = sampled_h_pca
-
-        # Project next steps using averaged direction (unit step for visualization)
-        next_steps = filtered_sampled_h + filtered_directions
-        next_steps_pca = pca.transform(next_steps)
-
-        # Plot arrows
-        X = filtered_sampled_h_pca[:, 0]
-        Y = filtered_sampled_h_pca[:, 1]
-        U = next_steps_pca[:, 0] - X
-        V = next_steps_pca[:, 1] - Y
-
-        # Normalize arrow lengths for visualization
-        norm_vec = np.sqrt(U**2 + V**2)
-        U_norm = U / (norm_vec + 1e-8)
-        V_norm = V / (norm_vec + 1e-8)
-
-        # Color arrows by average magnitude
-        q = ax.quiver(X, Y, U_norm, V_norm, filtered_magnitudes, cmap='viridis')
-
-        # Set plot limits and labels
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        ax.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.2f}%)")
-        ax.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.2f}%)")
-        ax.set_title(f"{result['name']} ({num_steps} Steps)")
-        ax.grid(True)
-
-        # Add colorbar
-        cbar = fig.colorbar(q, ax=ax)
-        cbar.set_label("Average Step Magnitude")
-
-    # Adjust layout and add suptitle
-    filter_text = f", Magnitude > {magnitude_filter}" if magnitude_filter is not None else ""
-    fig.suptitle(f"Average RNN Dynamics in PCA Space", fontsize=16)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-
-    return fig, axes
-
 def rnn_df(model_path, n_states=5000, n_samples=1000):
     # Load the RNN model
     rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
@@ -1347,9 +1098,9 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
     # Initialize storage
     h_traj = []
     metrics = {
-        'avg_alignment_ih_full': [],
-        'avg_alignment_hh_full': [],
-        'avg_alignment_ih_hh': [],
+        'alignment_ih_full': [],
+        'alignment_hh_full': [],
+        'alignment_ih_hh': [],
         'jacobian_hh_max_eigenvalue': [],
         'jacobian_hh_eigenvalues_gt_1': [],
         'jacobian_hh_max_imag': [],
@@ -1362,7 +1113,16 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
         'full_pca_dim': [],
         'main_align': [],
         'main_mag': [],
+        'logit0': [],
+        'logit2': [],
+        'avg_sign_changes': [],
+        'mask_count': [],
+        'transition': [],
         'logits': [],
+        'mask_hh': [],
+        'mask_full': [],
+        'mask_h': [],
+        'h_mask': []
     }
     x_t_list = []
     ev_full_list = []
@@ -1375,8 +1135,15 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
         h_t = torch.relu(x_t @ ih.T + h_prev @ hh.T)
 
         # Compute logits
-        logits = h_t @ fc.T
-        logits = F.softmax(logits, dim=0).cpu().numpy()
+        logits = h_prev @ fc.T
+        probs = F.softmax(logits, dim=0)
+        most_probable = torch.argmax(probs).item()
+        initial_logit = logits[most_probable].item()
+
+        # Store logits for array_metrics
+        metrics['logits'].append(logits.cpu().numpy())
+        logit0 = probs[0].item()
+        logit2 = probs[2].item()
 
         # Compute contributions
         hh_relu_t = torch.relu(h_prev @ hh.T) - h_prev
@@ -1437,15 +1204,56 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
         jacobian_full_eigenvalues_gt_1 = np.sum(magnitudes_full > 1)
         jacobian_full_max_imag = np.max(np.abs(imag_parts_full))
 
+        # Compute average sign changes
+        sign_changes_list = []
+        for _ in range(10):
+            h_current = h_prev.clone()
+            prev_logit = initial_logit
+            sign_changes = 0
+            prev_delta_sign = None
+            steps = 0
+            while True:
+                x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+                h_current = torch.relu(x @ ih.T + h_current @ hh.T)
+                new_logits = h_current @ fc.T
+                new_probs = F.softmax(new_logits, dim=0)
+                new_most_probable = torch.argmax(new_probs).item()
+                steps += 1
+
+                current_logit = new_logits[most_probable].item()
+                delta_logit = current_logit - prev_logit
+                if delta_logit > 0:
+                    current_sign = 1
+                elif delta_logit < 0:
+                    current_sign = -1
+                else:
+                    current_sign = 0
+                if prev_delta_sign is not None and current_sign != prev_delta_sign and current_sign != 0:
+                    sign_changes += 1
+                prev_delta_sign = current_sign
+                prev_logit = current_logit
+
+                if new_most_probable != most_probable or steps > 10000:
+                    sign_changes_list.append(sign_changes)
+                    break
+        avg_sign_changes = np.mean(sign_changes_list)
+
+        mask_h = (h_prev > 0).float()
+        metrics['mask_hh'].append(mask_hh.cpu().numpy())
+        metrics['mask_full'].append(mask_full.cpu().numpy())
+        metrics['mask_h'].append(mask_h.cpu().numpy())
+        metrics['h_mask'].append(h_prev.cpu().numpy())
+        mask_count = np.sum((mask_full.cpu().numpy() - mask_hh.cpu().numpy()) == 1)
+
         # Indicators
         main_align = 1 if cos_ih_full > cos_hh_full else 0
         main_mag = 1 if mag_ih > mag_hh else 0
 
         # Store data
         h_traj.append(h_t.cpu().numpy())
-        metrics['avg_alignment_ih_full'].append(cos_ih_full)
-        metrics['avg_alignment_hh_full'].append(cos_hh_full)
-        metrics['avg_alignment_ih_hh'].append(cos_ih_hh)
+        metrics['alignment_ih_full'].append(cos_ih_full)
+        metrics['alignment_hh_full'].append(cos_hh_full)
+        metrics['alignment_ih_hh'].append(cos_ih_hh)
         metrics['jacobian_hh_max_eigenvalue'].append(jacobian_hh_max_eigenvalue)
         metrics['jacobian_hh_eigenvalues_gt_1'].append(jacobian_hh_eigenvalues_gt_1)
         metrics['jacobian_hh_max_imag'].append(jacobian_hh_max_imag)
@@ -1458,7 +1266,10 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
         metrics['full_pca_dim'].append(full_pca_dim)
         metrics['main_align'].append(main_align)
         metrics['main_mag'].append(main_mag)
-        metrics['logits'].append(logits)
+        metrics['logit0'].append(logit0)
+        metrics['logit2'].append(logit2)
+        metrics['avg_sign_changes'].append(avg_sign_changes)
+        metrics['mask_count'].append(mask_count)
         x_t_list.append(x_t.cpu().numpy())
         ev_full_list.append(ev_full.cpu().numpy())
         ev_hh_list.append(ev_hh.cpu().numpy())
@@ -1474,7 +1285,7 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
             transition[i] = 1
         elif prev == 2 and curr == 0:
             transition[i] = 2
-    metrics['transition'] = transition
+    metrics['transition'] = transition.tolist()
 
     # Build DataFrame
     h_df = pd.DataFrame(np.array(h_traj), columns=[f'h_{i}' for i in range(150)])
@@ -1482,14 +1293,15 @@ def rnn_df(model_path, n_states=5000, n_samples=1000):
     df = pd.concat([h_df, metrics_df], axis=1)
 
     # Convert lists to arrays
-    x_t_all = np.array(x_t_list)  # Shape: (n_states, 100)
+    h_array = np.array(h_traj)
+    x_array = np.array(x_t_list)  # Shape: (n_states, 100)
     ev_full_all = np.array(ev_full_list)  # Shape: (n_states, 150)
     ev_hh_all = np.array(ev_hh_list)  # Shape: (n_states, 150)
 
-    return df, pca, x_t_all, ev_full_all, ev_hh_all
+    return df, pca, h_array, x_array, ev_full_all, ev_hh_all
 
 def transition_df(model_path, n_states=5000, n_samples=1000):
-    df, pca, x_t_all, ev_full_all, ev_hh_all = rnn_df(model_path, n_states=n_states, n_samples=n_samples)
+    df, pca, _, x_t_all, ev_full_all, ev_hh_all = rnn_df(model_path, n_states=n_states, n_samples=n_samples)
     all_windows = []
     h_windows = []
     x_t_windows = []
@@ -1519,37 +1331,50 @@ def transition_df(model_path, n_states=5000, n_samples=1000):
     ev_hh_array = np.stack(ev_hh_windows)  # Shape: (n_transitions, 11, 150)
     return windows_df, pca, h_array, x_t_array, ev_full_array, ev_hh_array
 
-def tr_prob(model_path, n_states=5000, n_samples=1000):
+def tr_prob(model_path, n_states=5000, n_samples=1000, modality="average"):
+    if modality not in ["average", "mode", "median"]:
+        raise ValueError("modality must be 'average' or 'mode'")
+    
+    # Load model
     rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
     rnn.load_state_dict(torch.load(model_path))
     ih = rnn.rnn.weight_ih_l0.data
     hh = rnn.rnn.weight_hh_l0.data
     fc = rnn.fc.weight.data 
     device = ih.device
+    
+    # Generate hidden states
     h = torch.zeros((30000, 150)).to(device)
     for i in range(1, 30000):
         x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
         h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
+    
+    # PCA transformation
     pca = PCA(n_components=2)
     h_np = h.cpu().numpy()
     pca.fit(h_np)
-
+    
+    # Sample states
     state_indices = np.random.choice(range(1, 30000), size=n_states, replace=False)
     selected_states = h[state_indices]
-    avg_steps = np.zeros(n_states)
-    avg_sign_changes = np.zeros(n_states)
     state_projections = pca.transform(selected_states.cpu().numpy())
-
+    
+    # Initialize arrays for metrics
+    steps_metric = np.zeros(n_states)
+    sign_changes_metric = np.zeros(n_states)
+    
+    # Process each state
     for idx, i in tqdm(enumerate(range(n_states)), total=n_states, desc="Processing states"):
         state = selected_states[i]
         logits = state @ fc.T
         probs = softmax(logits, dim=0)
         most_probable = torch.argmax(probs).item()
         initial_logit = logits[most_probable].item()
-
+        
         steps_list = []
         sign_changes_list = []
-
+        
+        # Sample trajectories
         for _ in range(n_samples):
             h_current = state.clone()
             prev_logit = initial_logit
@@ -1563,7 +1388,7 @@ def tr_prob(model_path, n_states=5000, n_samples=1000):
                 new_probs = softmax(new_logits, dim=0)
                 new_most_probable = torch.argmax(new_probs).item()
                 steps += 1
-
+                
                 current_logit = new_logits[most_probable].item()
                 delta_logit = current_logit - prev_logit
                 if delta_logit > 0:
@@ -1576,71 +1401,82 @@ def tr_prob(model_path, n_states=5000, n_samples=1000):
                     sign_changes += 1
                 prev_delta_sign = current_sign
                 prev_logit = current_logit
-
-                if new_most_probable != most_probable:
+                
+                if new_most_probable != most_probable or steps > 10000:
                     steps_list.append(steps)
                     sign_changes_list.append(sign_changes)
                     break
-                if steps > 10000:
-                    steps_list.append(steps)
-                    sign_changes_list.append(sign_changes)
-                    break
-
-        avg_steps[idx] = np.mean(steps_list)
-        avg_sign_changes[idx] = np.mean(sign_changes_list)
-
-
+        
+        # Compute metric based on modality
+        if modality == "average":
+            steps_metric[idx] = np.mean(steps_list)
+            sign_changes_metric[idx] = np.mean(sign_changes_list)
+        elif modality == "mode":  # mode
+            steps_metric[idx] = mode(steps_list, keepdims=True)[0][0]
+            sign_changes_metric[idx] = mode(sign_changes_list, keepdims=True)[0][0]
+        elif modality == "median":  # median
+            steps_metric[idx] = np.median(steps_list)
+            sign_changes_metric[idx] = np.median(sign_changes_list)
+    
+    # Plotting
     fig = plt.figure(figsize=(25, 5))
+    
+    # Plot 1: PCA Projection - Transition Steps
     ax1 = fig.add_subplot(141)
     colors = {1: 'red', 2: 'blue', 3: 'green', 4: 'orange', 5: 'purple', 6: 'yellow', 7: 'pink', 8: 'salmon'}
     for steps in range(1, 9):
-        mask = np.isclose(avg_steps, steps, atol=0.3)
+        mask = np.isclose(steps_metric, steps, atol=0.3)
         if np.any(mask):
             ax1.scatter(state_projections[mask, 0], state_projections[mask, 1], 
                        c=colors[steps], alpha=0.8, label=f'{steps} steps')
-    mask_other = ~np.isin(np.round(avg_steps), list(range(1, 9)))
+    mask_other = ~np.isin(np.round(steps_metric), list(range(1, 9)))
     if np.any(mask_other):
         scatter = ax1.scatter(state_projections[mask_other, 0], state_projections[mask_other, 1], 
-                            c=avg_steps[mask_other], cmap='viridis', alpha=0.6, label='Other steps')
-        plt.colorbar(scatter, label='Average Steps Until Output Switch')
+                            c=steps_metric[mask_other], cmap='viridis', alpha=0.6, 
+                            label=f'Other {modality} steps')
+        plt.colorbar(scatter, label=f'{modality.capitalize()} Steps Until Output Switch')
     ax1.set_xlabel('PCA Component 1')
     ax1.set_ylabel('PCA Component 2')
-    ax1.set_title('PCA Projection: Average Transition Steps')
+    ax1.set_title(f'PCA Projection: {modality.capitalize()} Transition Steps')
     ax1.legend()
     ax1.grid(True)
-
+    
+    # Plot 2: Histogram - Transition Steps
     ax2 = fig.add_subplot(142)
-    ax2.hist(avg_steps, bins=int(max(avg_steps)), edgecolor='black')
-    ax2.set_xticks(np.arange(0, int(max(avg_steps)), 1))
-    ax2.set_xlabel('Average Timesteps to Transition')
+    ax2.hist(steps_metric, bins=int(max(steps_metric)) if max(steps_metric) > 0 else 1, edgecolor='black')
+    ax2.set_xticks(np.arange(0, int(max(steps_metric)) + 1, 1))
+    ax2.set_xlabel(f'{modality.capitalize()} Timesteps to Transition')
     ax2.set_ylabel('Frequency')
-    ax2.set_title('Distribution of Average Transition Times')
+    ax2.set_title(f'Distribution of {modality.capitalize()} Transition Times')
     ax2.grid(True, alpha=0.3)
-
+    
+    # Plot 3: PCA Projection - Sign Changes
     ax3 = fig.add_subplot(143)
-    mask_red = avg_sign_changes <= 1
+    mask_red = sign_changes_metric <= 1
     if np.any(mask_red):
         ax3.scatter(state_projections[mask_red, 0], state_projections[mask_red, 1], 
                     c='red', alpha=0.8, label='< 1 Sign Changes')
     mask_other = ~mask_red
     if np.any(mask_other):
         scatter = ax3.scatter(state_projections[mask_other, 0], state_projections[mask_other, 1], 
-                             c=avg_sign_changes[mask_other], cmap='plasma', alpha=0.6)
-        plt.colorbar(scatter, label='Average Sign Changes Before Transition')
+                             c=sign_changes_metric[mask_other], cmap='plasma', alpha=0.6)
+        plt.colorbar(scatter, label=f'{modality.capitalize()} Sign Changes Before Transition')
     ax3.set_xlabel('PCA Component 1')
     ax3.set_ylabel('PCA Component 2')
-    ax3.set_title('PCA Projection: Average Sign Changes')
+    ax3.set_title(f'PCA Projection: {modality.capitalize()} Sign Changes')
     ax3.legend()
     ax3.grid(True)
-
+    
+    # Plot 4: Histogram - Sign Changes
     ax4 = fig.add_subplot(144)
-    ax4.hist(avg_sign_changes, bins=int(max(avg_sign_changes)) if max(avg_sign_changes) > 0 else 1, edgecolor='black')
-    ax4.set_xticks(np.arange(0, int(max(avg_sign_changes)) + 1, 1))
-    ax4.set_xlabel('Average Sign Changes')
+    ax4.hist(sign_changes_metric, bins=int(max(sign_changes_metric)) if max(sign_changes_metric) > 0 else 1, edgecolor='black')
+    ax4.set_xticks(np.arange(0, int(max(sign_changes_metric)) + 1, 1))
+    ax4.set_xlabel(f'{modality.capitalize()} Sign Changes')
     ax4.set_ylabel('Frequency')
-    ax4.set_title('Distribution of Average Sign Changes')
+    ax4.set_title(f'Distribution of {modality.capitalize()} Sign Changes')
     ax4.grid(True, alpha=0.3)
-
+    
     plt.tight_layout()
     plt.show()
-    return avg_steps, avg_sign_changes
+    
+    return steps_metric, sign_changes_metric
