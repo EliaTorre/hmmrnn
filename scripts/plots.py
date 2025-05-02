@@ -1,0 +1,514 @@
+import os
+import glob
+import json
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+from typing import List, Dict, Any, Tuple
+from collections import defaultdict
+from scripts.hmm import HMM
+from scripts.rnn import RNN
+from scripts.mechint import load_model
+
+def get_model_paths(structured=False, with_config=False) -> Any:
+    """
+    Extract model paths from the grid search experiment directory.
+    
+    Args:
+        structured (bool): If True, returns a nested dictionary organized by model parameters.
+                          If False, returns a list of lists of model paths.
+        with_config (bool): If True, includes the HMM configuration for each model.
+    
+    Returns:
+        If structured=False and with_config=False:
+            List[List[str]]: A list of lists containing model paths.
+        If structured=True and with_config=False:
+            Dict: A nested dictionary organizing models by type, hidden size, input size, and seed.
+        If structured=False and with_config=True:
+            List[Tuple[str, Dict]]: A list of tuples, each containing (model_path, config_dict).
+        If structured=True and with_config=True:
+            Dict: A nested dictionary with models and their configurations.
+    """
+    base_dir = "/home/elia/Documents/rnnrep/Experiments/grid_search_20250412_021154"
+    
+    # Check if the directory exists
+    if not os.path.exists(base_dir):
+        print(f"Warning: Directory {base_dir} does not exist.")
+        return [] if not structured else {}
+    
+    model_types = ["HMMTwo", "HMMThree", "HMMFour", "HMMFive"]
+    hidden_sizes = ["hidden_50", "hidden_150", "hidden_200"]
+    input_sizes = ["input_1", "input_10", "input_100", "input_200"]
+    seeds = ["seed_0", "seed_1", "seed_2"]
+    
+    if structured:
+        # Create a nested dictionary to organize models
+        structured_paths = defaultdict(
+            lambda: defaultdict(
+                lambda: defaultdict(
+                    lambda: defaultdict(list if not with_config else dict)
+                )
+            )
+        )
+    
+    all_model_paths = []
+    
+    # Traverse the directory structure
+    for model_type in model_types:
+        for hidden_size in hidden_sizes:
+            for input_size in input_sizes:
+                for seed in seeds:
+                    # Construct the path to the experiment directory
+                    exp_dir = os.path.join(base_dir, model_type, hidden_size, input_size, seed)
+                    models_dir = os.path.join(exp_dir, "models")
+                    
+                    # Skip if the models directory doesn't exist
+                    if not os.path.exists(models_dir):
+                        continue
+                    
+                    # Try to load the config file
+                    config_path = os.path.join(exp_dir, "config.json")
+                    config_data = None
+                    if with_config and os.path.exists(config_path):
+                        try:
+                            with open(config_path, 'r') as f:
+                                config_data = json.load(f)
+                        except Exception as e:
+                            print(f"Warning: Could not load config file {config_path}: {e}")
+                    
+                    # Find all .pth files in the models directory (excluding evolution subfolder)
+                    model_paths = []
+                    model_configs = []
+                    
+                    for model_file in glob.glob(os.path.join(models_dir, "*.pth")):
+                        # Skip files in the evolution subfolder
+                        if "evolution" not in model_file:
+                            model_paths.append(model_file)
+                            if with_config:
+                                model_configs.append((model_file, config_data))
+                    
+                    # Add the model paths to the appropriate structure
+                    if model_paths:
+                        if structured:
+                            if with_config:
+                                # Create a dictionary mapping model paths to configs
+                                model_config_dict = {model_path: config for model_path, config in model_configs}
+                                structured_paths[model_type][hidden_size][input_size][seed] = model_config_dict
+                            else:
+                                structured_paths[model_type][hidden_size][input_size][seed] = model_paths
+                        
+                        if with_config:
+                            all_model_paths.append(model_configs)
+                        else:
+                            all_model_paths.append(model_paths)
+    
+    return structured_paths if structured else all_model_paths
+
+def get_flat_model_list(with_config=False) -> List[Any]:
+    """
+    Get a flat list of all model paths, optionally with configurations.
+    
+    Args:
+        with_config (bool): If True, includes the HMM configuration for each model.
+    
+    Returns:
+        If with_config=False:
+            List[str]: A flat list of all model paths.
+        If with_config=True:
+            List[Tuple[str, Dict]]: A list of tuples, each containing (model_path, config_dict).
+    """
+    model_groups = get_model_paths(structured=False, with_config=with_config)
+    
+    if with_config:
+        return [item for group in model_groups for item in group]
+    else:
+        return [model for group in model_groups for model in group]
+
+def get_specific_models(model_type=None, hidden_size=None, input_size=None, seed=None, with_config=False) -> List[Any]:
+    """
+    Get models matching specific criteria, optionally with configurations.
+    
+    Args:
+        model_type (str, optional): Filter by model type (e.g., "HMMTwo").
+        hidden_size (str, optional): Filter by hidden size (e.g., "hidden_50").
+        input_size (str, optional): Filter by input size (e.g., "input_1").
+        seed (str, optional): Filter by seed (e.g., "seed_0").
+        with_config (bool): If True, includes the HMM configuration for each model.
+    
+    Returns:
+        If with_config=False:
+            List[str]: A list of model paths matching the criteria.
+        If with_config=True:
+            List[Tuple[str, Dict]]: A list of tuples, each containing (model_path, config_dict).
+    """
+    structured_paths = get_model_paths(structured=True, with_config=with_config)
+    result = []
+    
+    # Filter by model type
+    model_types = [model_type] if model_type else structured_paths.keys()
+    
+    for mt in model_types:
+        if mt not in structured_paths:
+            continue
+            
+        # Filter by hidden size
+        hidden_sizes = [hidden_size] if hidden_size else structured_paths[mt].keys()
+        
+        for hs in hidden_sizes:
+            if hs not in structured_paths[mt]:
+                continue
+                
+            # Filter by input size
+            input_sizes = [input_size] if input_size else structured_paths[mt][hs].keys()
+            
+            for is_ in input_sizes:
+                if is_ not in structured_paths[mt][hs]:
+                    continue
+                    
+                # Filter by seed
+                seeds = [seed] if seed else structured_paths[mt][hs][is_].keys()
+                
+                for s in seeds:
+                    if s not in structured_paths[mt][hs][is_]:
+                        continue
+                    
+                    if with_config:
+                        # Add tuples of (model_path, config) to the result
+                        for model_path, config in structured_paths[mt][hs][is_][s].items():
+                            result.append((model_path, config))
+                    else:
+                        # Add just the model paths to the result
+                        result.extend(structured_paths[mt][hs][is_][s])
+    
+    return result
+
+def print_model_summary(with_config=True):
+    """
+    Print a summary of the models found, optionally with configuration details.
+    
+    Args:
+        with_config (bool): If True, includes sample configuration details.
+    """
+    structured_paths = get_model_paths(structured=True, with_config=with_config)
+    flat_list = get_flat_model_list(with_config=False)  # Just for counting
+    
+    if not flat_list:
+        print("No models found.")
+        return
+    
+    # Count models by type
+    model_counts = defaultdict(int)
+    hidden_counts = defaultdict(int)
+    input_counts = defaultdict(int)
+    seed_counts = defaultdict(int)
+    
+    for model_type, hidden_sizes in structured_paths.items():
+        for hidden_size, input_sizes in hidden_sizes.items():
+            for input_size, seeds in input_sizes.items():
+                for seed, models in seeds.items():
+                    count = len(models)
+                    model_counts[model_type] += count
+                    hidden_counts[hidden_size] += count
+                    input_counts[input_size] += count
+                    seed_counts[seed] += count
+    
+    print(f"Found {len(flat_list)} total models across {sum(1 for _ in structured_paths.keys())} model types.")
+    
+    # Print model type distribution
+    print("\nModels by type:")
+    for model_type, count in sorted(model_counts.items()):
+        print(f"  {model_type}: {count} models")
+    
+    # Print hidden size distribution
+    print("\nModels by hidden size:")
+    for hidden_size, count in sorted(hidden_counts.items()):
+        print(f"  {hidden_size}: {count} models")
+    
+    # Print input size distribution
+    print("\nModels by input size:")
+    for input_size, count in sorted(input_counts.items()):
+        print(f"  {input_size}: {count} models")
+    
+    # Print seed distribution
+    print("\nModels by seed:")
+    for seed, count in sorted(seed_counts.items()):
+        print(f"  {seed}: {count} models")
+    
+    # Print example model path and config
+    if with_config:
+        model_with_config = get_flat_model_list(with_config=True)
+        if model_with_config and model_with_config[0][1] is not None:
+            print("\nExample model with configuration:")
+            model_path, config = model_with_config[0]
+            print(f"  Model: {model_path}")
+            print(f"  Filename: {os.path.basename(model_path)}")
+            print("  Configuration:")
+            # Print some key configuration parameters
+            key_params = ['states', 'outputs', 'emission_method', 'input_size', 'hidden_size']
+            for param in key_params:
+                if param in config:
+                    print(f"    {param}: {config[param]}")
+    else:
+        # Print example model path
+        if flat_list:
+            print("\nExample model path:")
+            print(f"  {flat_list[0]}")
+            print(f"  Filename: {os.path.basename(flat_list[0])}")
+
+def get_models_with_configs() -> List[Tuple[str, Dict]]:
+    """
+    Get a list of all models with their associated HMM configurations.
+    
+    Returns:
+        List[Tuple[str, Dict]]: A list of tuples, each containing (model_path, config_dict).
+    """
+    return get_flat_model_list(with_config=True)
+
+def compare_hmm_rnn_transition_matrices(num_seq=1000, seq_len=100):
+    """
+    Compare HMM and RNN models by calculating transition matrices and their squared differences.
+    
+    This function:
+    1. Generates HMM sequences and RNN sequences for each model
+    2. Calculates transition matrices for both
+    3. Computes the squared differences between these transition matrices
+    4. Averages these squared differences across seeds
+    5. Creates a grid of plots showing these averaged squared difference matrices
+    
+    Args:
+        num_seq (int): Number of sequences to generate for each model
+        seq_len (int): Length of each sequence
+        
+    Returns:
+        dict: Dictionary containing the averaged squared difference matrices for each model type,
+              hidden size, and input size combination
+    """
+    # Get all models with their configurations
+    models_with_configs = get_models_with_configs()
+    
+    # Group models by type, hidden size, input size, and seed
+    grouped_models = defaultdict(
+        lambda: defaultdict(
+            lambda: defaultdict(
+                lambda: defaultdict(list)
+            )
+        )
+    )
+    
+    for model_path, config in models_with_configs:
+        if config is None:
+            continue
+            
+        # Extract model type from path
+        path_parts = model_path.split('/')
+        model_type_idx = path_parts.index("Experiments") + 2  # +2 to skip "Experiments" and "grid_search_..."
+        model_type = path_parts[model_type_idx]
+        hidden_size = path_parts[model_type_idx + 1]
+        input_size = path_parts[model_type_idx + 2]
+        seed = path_parts[model_type_idx + 3]
+        
+        grouped_models[model_type][hidden_size][input_size][seed].append((model_path, config))
+    
+    # Initialize results dictionary
+    results = defaultdict(
+        lambda: defaultdict(
+            lambda: defaultdict(list)
+        )
+    )
+    
+    # Process each model
+    for model_type, hidden_sizes in grouped_models.items():
+        print(f"Processing {model_type} models...")
+        
+        for hidden_size, input_sizes in hidden_sizes.items():
+            print(f"  Processing {hidden_size}...")
+            
+            for input_size, seeds in input_sizes.items():
+                print(f"    Processing {input_size}...")
+                
+                # List to store difference matrices for this combination
+                diff_matrices = []
+                
+                for seed, models in seeds.items():
+                    print(f"      Processing {seed}...")
+                    
+                    for model_path, config in models:
+                        print(f"        Processing model: {os.path.basename(model_path)}")
+                        
+                        # Extract parameters from config
+                        states = config.get('states', 2)
+                        outputs = config.get('outputs', 3)
+                        stay_prob = config.get('stay_prob', 0.95)
+                        target_prob = config.get('target_prob', 0.05)
+                        transition_method = config.get('transition_method', 'target_prob')
+                        emission_method = config.get('emission_method', 'linear')
+                        input_size_val = config.get('input_size', 1)
+                        hidden_size_val = config.get('hidden_size', 50)
+                        
+                        # Initialize HMM
+                        hmm = HMM(
+                            states=states,
+                            outputs=outputs,
+                            stay_prob=stay_prob,
+                            target_prob=target_prob,
+                            transition_method=transition_method,
+                            emission_method=emission_method
+                        )
+                        
+                        # Load RNN model
+                        rnn = load_model(
+                            model_path=model_path,
+                            input_size=input_size_val,
+                            hidden_size=hidden_size_val,
+                            output_size=outputs
+                        )
+                        
+                        # Generate sequences
+                        hmm_sequences, _ = hmm.gen_seq(num_seq, seq_len)
+                        rnn_outputs = rnn.gen_seq(dynamics_mode="full", batch_mode=True, 
+                                                num_seq=num_seq, seq_len=seq_len)
+                        rnn_sequences = rnn_outputs["outs"]
+                        
+                        # Calculate transition matrices
+                        hmm_trans_matrix = calculate_transition_matrix(hmm_sequences.numpy(), outputs)
+                        rnn_trans_matrix = calculate_transition_matrix(rnn_sequences, outputs)
+                        
+                        # Calculate differences
+                        diff_matrix = hmm_trans_matrix - rnn_trans_matrix
+                        diff_matrices.append(diff_matrix)
+                
+                # Average squared difference matrices across seeds
+                if diff_matrices:
+                    avg_diff_matrix = np.mean(diff_matrices, axis=0)
+                    std_diff_matrix = np.std(diff_matrices, axis=0)
+                    results[model_type][hidden_size][input_size] = (avg_diff_matrix, std_diff_matrix)
+    
+    # Create plots
+    plot_transition_matrix_differences(results)
+    
+    return results
+
+def calculate_transition_matrix(sequences, num_outputs):
+    """
+    Calculate transition matrix between states.
+    
+    Args:
+        sequences: Sequence data (one-hot encoded)
+        num_outputs: Number of possible outputs
+        
+    Returns:
+        np.ndarray: Transition matrix
+    """
+    # Convert sequences to numpy if they're torch tensors
+    if isinstance(sequences, torch.Tensor):
+        sequences = sequences.cpu().numpy()
+    
+    # Initialize transition matrix
+    trans_matrix = np.zeros((num_outputs, num_outputs))
+    
+    # Get the most probable output at each time step
+    seq_max = np.argmax(sequences, axis=2)
+    
+    # Count transitions
+    for i in range(sequences.shape[0]):  # For each sequence
+        for j in range(1, sequences.shape[1]):  # For each time step (except the first)
+            prev_state = seq_max[i, j-1]
+            curr_state = seq_max[i, j]
+            trans_matrix[prev_state, curr_state] += 1
+    
+    # Normalize by row sums to get probabilities
+    row_sums = trans_matrix.sum(axis=1, keepdims=True)
+    # Avoid division by zero
+    row_sums[row_sums == 0] = 1
+    trans_matrix = trans_matrix / row_sums
+    
+    return trans_matrix
+
+def plot_transition_matrix_differences(results):
+    """
+    Create a grid of plots showing the averaged squared difference matrices.
+    
+    Args:
+        results: Dictionary containing the averaged squared difference matrices
+    """
+    model_types = ["HMMTwo", "HMMThree", "HMMFour", "HMMFive"]
+    hidden_sizes = ["hidden_50", "hidden_150", "hidden_200"]
+    input_sizes = ["input_1", "input_10", "input_100", "input_200"]
+    
+    # Create a figure for each model type
+    for model_type in model_types:
+        if model_type not in results:
+            continue
+            
+        # Create a grid of subplots (3 rows for hidden sizes, 4 columns for input sizes)
+        fig, axes = plt.subplots(3, 4, figsize=(20, 15), constrained_layout=True)
+        fig.suptitle(f"Transition Matrix Squared Differences: {model_type}", fontsize=16)
+        
+        # Find global min and max for consistent colorbar
+        vmin, vmax = float('inf'), float('-inf')
+        for hidden_size in hidden_sizes:
+            if hidden_size not in results[model_type]:
+                continue
+                
+            for input_size in input_sizes:
+                if input_size not in results[model_type][hidden_size]:
+                    continue
+                    
+                avg_matrix, _ = results[model_type][hidden_size][input_size]
+                vmin = min(vmin, np.min(avg_matrix))
+                vmax = max(vmax, np.max(avg_matrix))
+        
+        # If no data was found, skip this model type
+        if vmin == float('inf') or vmax == float('-inf'):
+            plt.close(fig)
+            continue
+        
+        # Plot each matrix
+        for i, hidden_size in enumerate(hidden_sizes):
+            if hidden_size not in results[model_type]:
+                continue
+                
+            for j, input_size in enumerate(input_sizes):
+                if input_size not in results[model_type][hidden_size]:
+                    continue
+                    
+                ax = axes[i, j]
+                avg_matrix, std_matrix = results[model_type][hidden_size][input_size]
+                
+                # Plot the matrix
+                im = ax.matshow(avg_matrix, cmap="Blues", vmin=vmin, vmax=vmax)
+                
+                # Add text annotations with mean ± std
+                for ii in range(avg_matrix.shape[0]):
+                    for jj in range(avg_matrix.shape[1]):
+                        ax.text(jj, ii, f"{avg_matrix[ii, jj]:.2f}\n±{std_matrix[ii, jj]:.2f}", 
+                                ha="center", va="center", fontsize=8)
+                
+                # Set title and labels
+                hidden_val = hidden_size.split('_')[1]
+                input_val = input_size.split('_')[1]
+                ax.set_title(f"Hidden: {hidden_val}, Input: {input_val}")
+                ax.set_xlabel("To State")
+                ax.set_ylabel("From State")
+                
+                # Set ticks
+                ax.set_xticks(np.arange(avg_matrix.shape[1]))
+                ax.set_yticks(np.arange(avg_matrix.shape[0]))
+                ax.set_xticklabels(np.arange(1, avg_matrix.shape[1] + 1))
+                ax.set_yticklabels(np.arange(1, avg_matrix.shape[0] + 1))
+        
+        # Add colorbar
+        cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.02, pad=0.04)
+        cbar.set_label("Squared Difference")
+        
+        # Save the figure
+        plt.savefig(f"transition_matrix_differences_{model_type}.png", dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+# Example usage
+if __name__ == "__main__":
+    # Uncomment the line below to run the transition matrix comparison
+    compare_hmm_rnn_transition_matrices(num_seq=100, seq_len=100)
+    
+    # Or print a summary of available models
+    # print_model_summary(with_config=True)
