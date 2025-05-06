@@ -933,8 +933,7 @@ def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
             # Existing metrics
             metrics[modality]['max_magnitude'][i] = torch.max(magnitudes).item()
             metrics[modality]['num_above_1'][i] = (magnitudes > 1).sum().item()
-            metrics[modality]['num_near_1'][i] = ((magnitudes > 1 - epsilon) & 
-                                                 (magnitudes < 1 + epsilon)).sum().item()
+            metrics[modality]['num_near_1'][i] = ((magnitudes > 1 - epsilon) & (magnitudes < 1 + epsilon)).sum().item()
             metrics[modality]['max_imag'][i] = torch.max(torch.abs(imag_parts)).item()
             metrics[modality]['num_with_imag'][i] = (torch.abs(imag_parts) > delta).sum().item()
 

@@ -164,7 +164,7 @@ class HMMFive(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500,  # Reduced epochs for faster execution
+        "epochs": 1500,  # Reduced epochs for faster execution
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
