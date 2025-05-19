@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,1470 +13,1188 @@ from scipy.stats import mode
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 from matplotlib.ticker import MultipleLocator
+from matplotlib.collections import LineCollection
+import matplotlib 
+import matplotlib.colors as mcolors
+from matplotlib.colors import BoundaryNorm
+from mpl_toolkits.mplot3d import Axes3D
 from scripts.rnn import RNN
 from scipy import linalg
 import itertools
 from tqdm import tqdm
 import pandas as pd
-
-def load_model(model_path, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False]):
-    rnn = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, output_size=output_size, biased=biased)
-    rnn.load_model(model_path)
-    return rnn
-
-def generate_sequences(rnn, time_steps=30000):
-    rnn_data = rnn.gen_seq(time_steps=time_steps, dynamics_mode="full")
-    return rnn_data
-
-def create_bounded_grid(pca_result, n_points=15, pc1=None, pc2=None):
-    mins = np.min(pca_result[:, :2], axis=0)
-    maxs = np.max(pca_result[:, :2], axis=0)
-    if pc1 is not None and len(pc1) == 2:
-        mins[0] = pc1[0]
-        maxs[0] = pc1[1]
-    if pc2 is not None and len(pc2) == 2:
-        mins[1] = pc2[0]
-        maxs[1] = pc2[1]
-    x = np.linspace(mins[0], maxs[0], n_points)
-    y = np.linspace(mins[1], maxs[1], n_points)
-    X, Y = np.meshgrid(x, y)
-    grid_points = np.column_stack([X.flatten(), Y.flatten()])
-    return grid_points
-
-def perform_pca(hidden_states, n_components=2):
-    pca = PCA(n_components=n_components)
-    pca_result = pca.fit_transform(hidden_states)
-    return pca, pca_result
-
-def map_to_original_space(grid_points, pca):
-    original_points = pca.inverse_transform(grid_points)
-    return original_points
-
-def project_to_pca(next_steps, pca):
-    pca_next_steps = pca.transform(next_steps)
-    return pca_next_steps
-
-def project_directions_to_pca(directions, pca):
-    projected_directions = np.zeros((2, directions.shape[1]))
-    for i in range(directions.shape[1]):
-        for j in range(2):
-            projected_directions[j, i] = np.dot(directions[:, i], pca.components_[j])
-    return projected_directions
-
-def project_point_to_svd_space(points, svd_directions):
-    projected_points = np.zeros((points.shape[0], 2))
-    for i in range(points.shape[0]):
-        for j in range(2):
-            projected_points[i, j] = np.dot(points[i], svd_directions[:, j])
-    return projected_points
-
-def project_data_to_svd_space(data, svd_directions):
-    projected_data = np.zeros((data.shape[0], 2))
-    for i in range(data.shape[0]):
-        for j in range(2):
-            projected_data[i, j] = np.dot(data[i], svd_directions[:, j])
-    return projected_data
-
-def map_from_svd_to_original(grid_points, svd_directions):
-    original_points = np.zeros((grid_points.shape[0], svd_directions.shape[0]))
-    for i in range(grid_points.shape[0]):
-        for j in range(2):
-            original_points[i] += grid_points[i, j] * svd_directions[:, j]
-    return original_points
-
-def find_fixed_points(rnn, original_points, pca):
-    device = rnn.device
-    hh = rnn.rnn.weight_hh_l0.data
-    print(original_points.shape)
-    h = torch.tensor(original_points, dtype=torch.float32).to(device)
-    for _ in range(1000):
-        h = torch.relu(h @ hh.T)
-    fixed_points_original = h.cpu().detach().numpy()
-    fixed_points_pca = pca.transform(fixed_points_original)
-    return fixed_points_pca
-
-def compute_both_dynamics(rnn, original_points, use_relu=True):
-    device = rnn.device
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-    h = torch.tensor(original_points, dtype=torch.float32).to(device)
-
-    if use_relu:
-        h_recurrence = torch.relu(h @ hh.T)
-    else:
-        h_recurrence = h @ hh.T
-
-    identity_matrix = torch.eye(h.shape[1], device=device)
-    h_input = torch.zeros_like(h)
-    for _ in range(100):
-        x = torch.normal(mean=0, std=1, size=(h.shape[0], rnn.input_size)).float().to(device)
-        if use_relu:
-            h_input += torch.relu(x @ ih.T + h @ identity_matrix)
-        else:
-            h_input += x @ ih.T + h @ identity_matrix
-    h_input /= 100
-    
-    h_full = torch.zeros_like(h)
-    for _ in range(10):
-        x = torch.normal(mean=0, std=1, size=(h.shape[0], rnn.input_size)).float().to(device)
-        if use_relu:
-            h_full += torch.relu(x @ ih.T + h @ hh.T)
-        else:
-            h_full += x @ ih.T + h @ hh.T
-    h_full /= 10 
-    
-    return (h_recurrence.cpu().detach().numpy(), h_input.cpu().detach().numpy(), h_full.cpu().detach().numpy())
-
-def calculate_vector_alignment(original_points, recurrence_steps, input_steps, method="cosine"):
-    recurrence_vectors = recurrence_steps - original_points
-    input_vectors = input_steps - original_points
-
-    if method == "dot":
-        alignment = np.sum(recurrence_vectors * input_vectors, axis=1)
-    elif method == "cosine":
-        recurrence_norm = np.linalg.norm(recurrence_vectors, axis=1)
-        input_norm = np.linalg.norm(input_vectors, axis=1)
-        valid_indices = (recurrence_norm > 0) & (input_norm > 0)
-        alignment = np.zeros(len(original_points))
-        alignment[valid_indices] = np.sum(recurrence_vectors[valid_indices] * input_vectors[valid_indices], axis=1) / (recurrence_norm[valid_indices] * input_norm[valid_indices])
-    else:
-        raise ValueError("Method must be either 'dot' or 'cosine'")
-    return alignment
-
-def analyze_weight_matrices_svd(rnn):
-    ih = rnn.rnn.weight_ih_l0.data.cpu().numpy()
-    hh = rnn.rnn.weight_hh_l0.data.cpu().numpy()
-
-    U_ih, S_ih, Vt_ih = np.linalg.svd(ih, full_matrices=False)
-    U_hh, S_hh, Vt_hh = np.linalg.svd(hh, full_matrices=False)
-    
-    ih_directions = U_ih[:, :5]
-    hh_directions = U_hh[:, :5]
-    
-    return ih_directions, hh_directions, S_ih, S_hh
-
-def flow_field(model_path, use_relu=True, alignment_method="cosine", input_size=100, hidden_size=150, 
-                         num_layers=1, output_size=3, biased=[False, False], pc1=None, pc2=None, color_by="alignment", num_states=None):
-    rnn = load_model(model_path, input_size, hidden_size, num_layers, output_size, biased)
-    rnn_data = generate_sequences(rnn)
-    pca, pca_result = perform_pca(rnn_data["h"])
-    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
-    grid_points = create_bounded_grid(pca_result, pc1=pc1, pc2=pc2)
-    original_points = map_to_original_space(grid_points, pca)
-    recurrence_steps, input_steps, full_steps = compute_both_dynamics(rnn, original_points, use_relu)
-    alignment = calculate_vector_alignment(original_points, recurrence_steps, input_steps, alignment_method)
-    fixed_points = find_fixed_points(rnn, original_points, pca)
-    pca_recurrence = project_to_pca(recurrence_steps, pca)
-    pca_input = project_to_pca(input_steps, pca)
-    pca_full = project_to_pca(full_steps, pca)
-    return plot_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full, fixed_points, alignment, pc1, pc2, color_by)
-
-def flow_field_svd_dir(model_path, use_relu=True, alignment_method="cosine", input_size=100, hidden_size=150, 
-                                num_layers=1, output_size=3, biased=[False, False], pc1=None, pc2=None, color_by="alignment"):
-    rnn = load_model(model_path, input_size, hidden_size, num_layers, output_size, biased)
-    ih_directions, hh_directions, ih_values, hh_values = analyze_weight_matrices_svd(rnn)
-    rnn_data = generate_sequences(rnn)
-    pca, pca_result = perform_pca(rnn_data["h"])
-    pca_ih_directions = project_directions_to_pca(ih_directions, pca)
-    pca_hh_directions = project_directions_to_pca(hh_directions, pca)
-    grid_points = create_bounded_grid(pca_result, pc1=pc1, pc2=pc2)
-    original_points = map_to_original_space(grid_points, pca)
-    recurrence_steps, input_steps, full_steps = compute_both_dynamics(rnn, original_points, use_relu)
-    alignment = calculate_vector_alignment(original_points, recurrence_steps, input_steps, alignment_method)
-    fixed_points = find_fixed_points(rnn, original_points, pca)
-    pca_recurrence = project_to_pca(recurrence_steps, pca)
-    pca_input = project_to_pca(input_steps, pca)
-    pca_full = project_to_pca(full_steps, pca)
-    return plot_flow_field_with_svd_directions(grid_points, pca_recurrence, pca_input, pca_full, fixed_points, alignment, 
-                                              pca_ih_directions, pca_hh_directions, ih_values, hh_values, pc1, pc2, color_by)
-
-def flow_field_svd_dim(model_path, use_relu=True, alignment_method="cosine", input_size=100, hidden_size=150, 
-                                num_layers=1, output_size=3, biased=[False, False], pc1=None, pc2=None, color_by="alignment"):
-    rnn = load_model(model_path, input_size, hidden_size, num_layers, output_size, biased)
-    ih_directions, hh_directions, ih_values, hh_values = analyze_weight_matrices_svd(rnn)
-    rnn_data = generate_sequences(rnn)
-    pca, pca_result = perform_pca(rnn_data["h"])
-    hh_data = project_data_to_svd_space(rnn_data["h"], hh_directions)
-    ih_data = project_data_to_svd_space(rnn_data["h"], ih_directions)
-    grid_hh = create_bounded_grid(hh_data, pc1=pc1, pc2=pc2)
-    grid_ih = create_bounded_grid(ih_data, pc1=pc1, pc2=pc2)
-    grid_pca = create_bounded_grid(pca_result, pc1=pc1, pc2=pc2)
-    original_points_hh = map_from_svd_to_original(grid_hh, hh_directions)
-    original_points_ih = map_from_svd_to_original(grid_ih, ih_directions)
-    original_points_pca = map_to_original_space(grid_pca, pca)
-    hh_recurrence, ih_input_for_hh, _ = compute_both_dynamics(rnn, original_points_hh, use_relu)
-    ih_recurrence, ih_input, _ = compute_both_dynamics(rnn, original_points_ih, use_relu)
-    pca_recurrence, pca_input, pca_full = compute_both_dynamics(rnn, original_points_pca, use_relu)
-    next_points_hh = project_point_to_svd_space(hh_recurrence, hh_directions)
-    next_points_ih = project_point_to_svd_space(ih_input, ih_directions)
-    next_points_pca = project_to_pca(pca_full, pca)
-    alignment_hh = calculate_vector_alignment(original_points_hh, hh_recurrence, ih_input_for_hh, alignment_method)
-    fixed_original = find_fixed_points(rnn, original_points_pca, pca)
-    fixed_original_space = map_to_original_space(fixed_original, pca)
-    fixed_points_hh = project_point_to_svd_space(fixed_original_space, hh_directions)
-    fixed_points_ih = project_point_to_svd_space(fixed_original_space, ih_directions)
-    return plot_flow_field_svd_dim(grid_hh, grid_ih, grid_pca, next_points_hh, next_points_ih, next_points_pca, 
-                                  fixed_points_hh, fixed_points_ih, fixed_original, alignment_hh, hh_values, ih_values, pc1, pc2, color_by)
-
-def sv_flow_fields(model_path, use_relu=True, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False], pc1=None, pc2=None):
-    rnn = load_model(model_path, input_size, hidden_size, num_layers, output_size, biased)
-    rnn_data = generate_sequences(rnn)
-    pca, pca_result = perform_pca(rnn_data["h"])
-    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
-    grid_points = create_bounded_grid(pca_result, n_points=15, pc1=pc1, pc2=pc2)
-    original_grid_points = map_to_original_space(grid_points, pca)
-    ih = rnn.rnn.weight_ih_l0.data.cpu().numpy()
-    hh = rnn.rnn.weight_hh_l0.data.cpu().numpy()
-    U_ih, S_ih, _ = np.linalg.svd(ih, full_matrices=False)
-    U_hh, S_hh, _ = np.linalg.svd(hh, full_matrices=False)
-    U_ih_top5 = U_ih[:, :5]
-    U_hh_top5 = U_hh[:, :5]
-    S_ih_top5 = S_ih[:5]
-    S_hh_top5 = S_hh[:5]
-    n_grid_points = original_grid_points.shape[0]
-    ih_perturbed = np.zeros((5, n_grid_points, hidden_size))
-    hh_perturbed = np.zeros((5, n_grid_points, hidden_size))
-
-    for i in range(5):
-        for j in range(n_grid_points):
-            if use_relu:
-                ih_perturbed[i, j] = relu(original_grid_points[j] + U_ih_top5[:, i])
-                hh_perturbed[i, j] = relu(original_grid_points[j] + U_hh_top5[:, i])
-            else:
-                ih_perturbed[i, j] = original_grid_points[j] + U_ih_top5[:, i]
-                hh_perturbed[i, j] = original_grid_points[j] + U_hh_top5[:, i]
-
-    ih_perturbed_pca = np.zeros((5, n_grid_points, 2))
-    hh_perturbed_pca = np.zeros((5, n_grid_points, 2))
-    
-    for i in range(5):
-        ih_perturbed_pca[i] = pca.transform(ih_perturbed[i])
-        hh_perturbed_pca[i] = pca.transform(hh_perturbed[i])
-
-    return plot_singular_vector_flow_fields(grid_points, ih_perturbed_pca, hh_perturbed_pca, S_ih_top5, S_hh_top5, pc1, pc2)
-
-def plot_singular_vector_flow_fields(grid_points, ih_perturbed_pca, hh_perturbed_pca, S_ih_top5, S_hh_top5, pc1=None, pc2=None):
-    fig, axes = plt.subplots(2, 5, figsize=(25, 10), constrained_layout=True)
-    x_min, x_max = float('inf'), float('-inf')
-    y_min, y_max = float('inf'), float('-inf')
-    
-    for i in range(5):
-        x_min = min(x_min, hh_perturbed_pca[i, :, 0].min(), ih_perturbed_pca[i, :, 0].min())
-        x_max = max(x_max, hh_perturbed_pca[i, :, 0].max(), ih_perturbed_pca[i, :, 0].max())
-        y_min = min(y_min, hh_perturbed_pca[i, :, 1].min(), ih_perturbed_pca[i, :, 1].min())
-        y_max = max(y_max, hh_perturbed_pca[i, :, 1].max(), ih_perturbed_pca[i, :, 1].max())
-    if pc1 is not None and len(pc1) == 2:
-        x_min, x_max = pc1[0], pc1[1]
-    if pc2 is not None and len(pc2) == 2:
-        y_min, y_max = pc2[0], pc2[1]
-    
-    all_magnitudes = []
-    for i in range(5):
-        U_hh = hh_perturbed_pca[i, :, 0] - grid_points[:, 0]
-        V_hh = hh_perturbed_pca[i, :, 1] - grid_points[:, 1]
-        U_ih = ih_perturbed_pca[i, :, 0] - grid_points[:, 0]
-        V_ih = ih_perturbed_pca[i, :, 1] - grid_points[:, 1]
-        all_magnitudes.extend(np.sqrt(U_hh**2 + V_hh**2))
-        all_magnitudes.extend(np.sqrt(U_ih**2 + V_ih**2)) 
-    vmin, vmax = min(all_magnitudes), max(all_magnitudes)
-    norm = Normalize(vmin=vmin, vmax=vmax)
-
-    for i in range(5):
-        ax = axes[0, i]
-        X = grid_points[:, 0] 
-        Y = grid_points[:, 1]
-        U = hh_perturbed_pca[i, :, 0] - grid_points[:, 0]
-        V = hh_perturbed_pca[i, :, 1] - grid_points[:, 1]
-        magnitude = np.sqrt(U**2 + V**2)
-        U_norm = U / (magnitude + 1e-8)
-        V_norm = V / (magnitude + 1e-8)
-        q = ax.quiver(X, Y, U_norm, V_norm, magnitude, cmap='viridis', norm=norm)
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        ax.set_title(f"HH-SV {i+1} (σ={S_hh_top5[i]:.2f})", fontsize=12)
-        if i == 0:
-            ax.set_ylabel("PC2", fontsize=12)
-        ax.grid(True)
-    
-    for i in range(5):
-        ax = axes[1, i]
-        X = grid_points[:, 0]
-        Y = grid_points[:, 1]
-        U = ih_perturbed_pca[i, :, 0] - grid_points[:, 0]
-        V = ih_perturbed_pca[i, :, 1] - grid_points[:, 1]
-        magnitude = np.sqrt(U**2 + V**2)
-        U_norm = U / (magnitude + 1e-8)
-        V_norm = V / (magnitude + 1e-8)
-        q = ax.quiver(X, Y, U_norm, V_norm, magnitude, cmap='viridis', norm=norm)
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        ax.set_title(f"IH-SV {i+1} (σ={S_ih_top5[i]:.2f})", fontsize=12)
-        ax.set_xlabel("PC1", fontsize=12)
-    
-        if i == 0:
-            ax.set_ylabel("PC2", fontsize=12)  
-        ax.grid(True)
-
-    cbar = fig.colorbar(q, ax=axes.ravel().tolist(), orientation='horizontal', pad=0.05, aspect=40)
-    cbar.set_label("Vector Magnitude")
-    fig.suptitle("Impact of SVD Singular Vectors on RNN Dynamics in PCA Space", fontsize=16)
-    
-    return fig, axes
-
-def plot_flow_field_2d(grid_points, pca_recurrence, pca_input, pca_full, fixed_points, alignment, pc1=None, pc2=None, color_by="alignment"):
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-    if pc1 is not None and len(pc1) == 2:
-        x_min, x_max = pc1[0], pc1[1]
-    else:
-        x_min, x_max = grid_points[:, 0].min(), grid_points[:, 0].max()
-    if pc2 is not None and len(pc2) == 2:
-        y_min, y_max = pc2[0], pc2[1]
-    else:
-        y_min, y_max = grid_points[:, 1].min(), grid_points[:, 1].max()
-        
-    # Calculate vector magnitudes if needed
-    if color_by == "magnitude":
-        recurrence_magnitude = np.sqrt(np.sum((pca_recurrence - grid_points)**2, axis=1))
-        input_magnitude = np.sqrt(np.sum((pca_input - grid_points)**2, axis=1))
-        full_magnitude = np.sqrt(np.sum((pca_full - grid_points)**2, axis=1))
-        magnitudes = [recurrence_magnitude, input_magnitude, full_magnitude]
-        # Use viridis colormap for magnitude and set appropriate min/max
-        cmap = 'viridis'
-        vmin = min(np.min(recurrence_magnitude), np.min(input_magnitude), np.min(full_magnitude))
-        vmax = max(np.max(recurrence_magnitude), np.max(input_magnitude), np.max(full_magnitude))
-        color_label = 'Vector Magnitude'
-    else:  # color_by == "alignment"
-        # Use original alignment values
-        magnitudes = [alignment, alignment, alignment]
-        cmap = 'Reds'
-        vmin = np.min(alignment)
-        vmax = np.max(alignment)
-        color_label = 'Vector Alignment'
-    
-    norm = Normalize(vmin=vmin, vmax=vmax)
-    dynamics_data = [("Recurrence Only", pca_recurrence, axes[0]), 
-                    ("Input Only", pca_input, axes[1]), 
-                    ("Full Dynamics", pca_full, axes[2])]
-                    
-    for i, (title, pca_next_steps, ax) in enumerate(dynamics_data):
-        X = grid_points[:, 0]
-        Y = grid_points[:, 1]
-        U = pca_next_steps[:, 0] - grid_points[:, 0]
-        V = pca_next_steps[:, 1] - grid_points[:, 1]
-        norm_vec = np.sqrt(U**2 + V**2)
-        U = U / (norm_vec + 1e-8)
-        V = V / (norm_vec + 1e-8)
-        q = ax.quiver(X, Y, U, V, magnitudes[i], cmap=cmap, norm=norm)
-        ax.scatter(fixed_points[:, 0], fixed_points[:, 1], marker='x', color='black', s=100, linewidth=2, label='Fixed Point')
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        ax.set_title(title, fontsize=14)
-        ax.set_xlabel("PC1", fontsize=12)
-        ax.set_ylabel("PC2", fontsize=12)
-        ax.grid(True)
-    
-    cbar = fig.colorbar(q, ax=axes, orientation='horizontal', pad=0.1)
-    cbar.set_label(color_label)
-    fig.suptitle(f"Comparison of RNN Dynamics in PCA Space (Colored by {color_label})", fontsize=16)
-    return fig, axes
-
-def plot_flow_field_with_svd_directions(grid_points, pca_recurrence, pca_input, pca_full, fixed_points, alignment, 
-                                      pca_ih_directions, pca_hh_directions, ih_values, hh_values, pc1=None, pc2=None, color_by="alignment"):
-    """
-    Plot the flow field with SVD directions.
-    
-    Parameters similar to plot_flow_field_2d with additional SVD direction parameters
-    """
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-    if pc1 is not None and len(pc1) == 2:
-        x_min, x_max = pc1[0], pc1[1]
-    else:
-        x_min, x_max = grid_points[:, 0].min(), grid_points[:, 0].max()
-    
-    if pc2 is not None and len(pc2) == 2:
-        y_min, y_max = pc2[0], pc2[1]
-    else:
-        y_min, y_max = grid_points[:, 1].min(), grid_points[:, 1].max()
-    
-    # Calculate vector magnitudes if needed
-    if color_by == "magnitude":
-        recurrence_magnitude = np.sqrt(np.sum((pca_recurrence - grid_points)**2, axis=1))
-        input_magnitude = np.sqrt(np.sum((pca_input - grid_points)**2, axis=1))
-        full_magnitude = np.sqrt(np.sum((pca_full - grid_points)**2, axis=1))
-        magnitudes = [recurrence_magnitude, input_magnitude, full_magnitude]
-        # Use viridis colormap for magnitude and set appropriate min/max
-        cmap = 'viridis'
-        vmin = min(np.min(recurrence_magnitude), np.min(input_magnitude), np.min(full_magnitude))
-        vmax = max(np.max(recurrence_magnitude), np.max(input_magnitude), np.max(full_magnitude))
-        color_label = 'Vector Magnitude'
-    else:  # color_by == "alignment"
-        # Use original alignment values
-        magnitudes = [alignment, alignment, alignment]
-        cmap = 'Reds'
-        vmin = np.min(alignment)
-        vmax = np.max(alignment)
-        color_label = 'Vector Alignment'
-    
-    norm = Normalize(vmin=vmin, vmax=vmax)
-    
-    dynamics_data = [
-        ("Recurrence Only", pca_recurrence, axes[0], pca_hh_directions, hh_values), 
-        ("Input Only", pca_input, axes[1], pca_ih_directions, ih_values), 
-        ("Full Dynamics", pca_full, axes[2], None, None)
-    ]
-    
-    svd_colors = ['magenta', 'orange', 'green', 'purple', 'cyan']
-    
-    for i, (title, pca_next_steps, ax, svd_directions, sv_values) in enumerate(dynamics_data):
-        X = grid_points[:, 0]
-        Y = grid_points[:, 1]
-        U = pca_next_steps[:, 0] - grid_points[:, 0]
-        V = pca_next_steps[:, 1] - grid_points[:, 1]
-        norm_vec = np.sqrt(U**2 + V**2)
-        U = U / (norm_vec + 1e-8)
-        V = V / (norm_vec + 1e-8)
-        q = ax.quiver(X, Y, U, V, magnitudes[i], cmap=cmap, norm=norm)
-        ax.scatter(fixed_points[:, 0], fixed_points[:, 1], 
-                  marker='x', color='black', s=100, linewidth=2, label='Fixed Point')
-        
-        if svd_directions is not None:
-            origin = np.zeros(2)
-            for j in range(5):
-                direction = svd_directions[:, j]
-                scale_factor = min(x_max - x_min, y_max - y_min) / 4
-                scaled_direction = direction * scale_factor
-                ax.arrow(origin[0], origin[1], 
-                        scaled_direction[0], scaled_direction[1],
-                        color=svd_colors[j], width=0.02, length_includes_head=True,
-                        head_width=0.1, head_length=0.1,
-                        label=f'SVD Dir {j+1} (σ={sv_values[j]:.2f})')
-        
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        ax.set_title(title, fontsize=14)
-        ax.set_xlabel("PC1", fontsize=12)
-        ax.set_ylabel("PC2", fontsize=12)
-        ax.grid(True)
-        ax.legend(loc='upper left', fontsize=9)
-    
-    cbar = fig.colorbar(q, ax=axes, orientation='horizontal', pad=0.1)
-    cbar.set_label(color_label)
-    fig.suptitle(f"RNN Dynamics with Principal SVD Directions (Colored by {color_label})", fontsize=16)
-    return fig, axes
-
-def plot_flow_field_svd_dim(grid_points_hh, grid_points_ih, grid_points_pca, next_points_hh, next_points_ih, next_points_pca, 
-                          fixed_points_hh, fixed_points_ih, fixed_points_pca, alignment, hh_values, ih_values, pc1=None, pc2=None, color_by="alignment"):
-    """
-    Plot the flow field in SVD dimension space.
-    
-    Parameters similar to previous plotting functions
-    """
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), constrained_layout=True)
-    
-    # Calculate vector magnitudes if needed
-    if color_by == "magnitude":
-        hh_magnitude = np.sqrt(np.sum((next_points_hh - grid_points_hh)**2, axis=1))
-        ih_magnitude = np.sqrt(np.sum((next_points_ih - grid_points_ih)**2, axis=1))
-        pca_magnitude = np.sqrt(np.sum((next_points_pca - grid_points_pca)**2, axis=1))
-        magnitudes = [hh_magnitude, ih_magnitude, pca_magnitude]
-        # Use viridis colormap for magnitude and set appropriate min/max
-        cmap = 'viridis'
-        vmin = min(np.min(hh_magnitude), np.min(ih_magnitude), np.min(pca_magnitude))
-        vmax = max(np.max(hh_magnitude), np.max(ih_magnitude), np.max(pca_magnitude))
-        color_label = 'Vector Magnitude'
-    else:  # color_by == "alignment"
-        # Use original alignment values for all plots for consistency
-        magnitudes = [alignment, alignment, alignment]
-        cmap = 'Reds'
-        vmin = np.min(alignment)
-        vmax = np.max(alignment)
-        color_label = 'Vector Alignment'
-    
-    norm = Normalize(vmin=vmin, vmax=vmax)
-    
-    plot_data = [
-        ("Recurrence in HH Space", grid_points_hh, next_points_hh, fixed_points_hh, axes[0], hh_values), 
-        ("Input in IH Space", grid_points_ih, next_points_ih, fixed_points_ih, axes[1], ih_values),
-        ("Full in PCA Space", grid_points_pca, next_points_pca, fixed_points_pca, axes[2], None)
-    ]
-    
-    for i, (title, grid, next_points, fixed, ax, sv_values) in enumerate(plot_data):
-        if pc1 is not None and len(pc1) == 2:
-            x_min, x_max = pc1[0], pc1[1]
-        else:
-            x_min, x_max = grid[:, 0].min(), grid[:, 0].max()
-        
-        if pc2 is not None and len(pc2) == 2:
-            y_min, y_max = pc2[0], pc2[1]
-        else:
-            y_min, y_max = grid[:, 1].min(), grid[:, 1].max()
-            
-        X = grid[:, 0]
-        Y = grid[:, 1]
-        U = next_points[:, 0] - grid[:, 0]
-        V = next_points[:, 1] - grid[:, 1]
-        norm_vec = np.sqrt(U**2 + V**2)
-        U = U / (norm_vec + 1e-8)
-        V = V / (norm_vec + 1e-8)
-        
-        q = ax.quiver(X, Y, U, V, magnitudes[i], cmap=cmap, norm=norm)
-        ax.scatter(fixed[:, 0], fixed[:, 1], marker='x', color='black', s=100, linewidth=2, label='Fixed Point')
-        
-        if "HH Space" in title:
-            ax.set_xlabel("HH Dir 1 (σ={:.2f})".format(sv_values[0]), fontsize=12)
-            ax.set_ylabel("HH Dir 2 (σ={:.2f})".format(sv_values[1]), fontsize=12)
-        elif "IH Space" in title:
-            ax.set_xlabel("IH Dir 1 (σ={:.2f})".format(sv_values[0]), fontsize=12)
-            ax.set_ylabel("IH Dir 2 (σ={:.2f})".format(sv_values[1]), fontsize=12)
-        else:
-            ax.set_xlabel("PC1", fontsize=12)
-            ax.set_ylabel("PC2", fontsize=12)
-            
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-        ax.set_title(title, fontsize=14)
-        ax.grid(True)
-        
-    cbar = fig.colorbar(q, ax=axes, orientation='horizontal', pad=0.1)
-    cbar.set_label(color_label)
-    fig.suptitle(f"RNN Dynamics in Different Projection Spaces (Colored by {color_label})", fontsize=16)
-    return fig, axes
-
-def relu(x):
-    result = x.copy()
-    result[result < 0] = 0
-    return result
-
-def rnn_var(model_path, n_states=1000, n_samples=1000):
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-    h = torch.zeros((n_states, 150)).to(ih.device)
-    for i in range(n_states):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
-        h[i] = torch.relu(x @ ih.T + (h[i-1] @ hh.T if i > 0 else 0))
-    types = {
-        'ih': torch.zeros((n_states, n_samples, 150)).to(ih.device),
-        'relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
-        'hh': torch.zeros((n_states, n_samples, 150)).to(ih.device),
-        'hh_relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
-        'ih_relu': torch.zeros((n_states, n_samples, 150)).to(ih.device),
-        'ih_relu_hh': torch.zeros((n_states, n_samples, 150)).to(ih.device)
-    }
-    for i in tqdm(range(n_states)):
-        for j in range(n_samples):
-            x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
-            x_ih = x @ ih.T
-            types['ih'][i, j] = x_ih
-            types['hh'][i, j] = (h[i] @ hh.T) - h[i]
-            types['relu'][i, j] = torch.relu(x_ih)
-            types['ih_relu'][i, j] = torch.relu(x_ih + h[i]) - h[i]
-            types['hh_relu'][i, j] = torch.relu(h[i] @ hh.T) - h[i]
-            types['ih_relu_hh'][i, j] = torch.relu(x_ih + h[i] @ hh.T) - h[i]
-    return h, types
-
-def magnitude(h, types, plot_3d=False):
-    h_np = h.cpu().numpy()
-
-    magnitudes = {
-        'ih_relu_hh': types['ih_relu_hh'].norm(dim=2).mean(dim=1).cpu().numpy(),
-        'hh_relu': types['hh_relu'].norm(dim=2).mean(dim=1).cpu().numpy(),
-        'ih_relu': types['ih_relu'].norm(dim=2).mean(dim=1).cpu().numpy()
-    }
-
-    pca = PCA(n_components=3)
-    h_pca = pca.fit_transform(h_np)
-
-    all_magnitudes = np.concatenate(list(magnitudes.values()))
-    vmin = all_magnitudes.min()
-    vmax = all_magnitudes.max()
-
-    if plot_3d:
-        fig = plt.figure(figsize=(15, 5))
-        axes = [fig.add_subplot(1, 3, i+1, projection='3d') for i in range(3)]
-    else:
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    types_to_plot = ['ih_relu_hh', 'hh_relu', 'ih_relu']
-    for i, type_name in enumerate(types_to_plot):
-        ax = axes[i]
-        magnitude_np = magnitudes[type_name]
-        
-        if plot_3d:
-            scatter = ax.scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], 
-                               c=magnitude_np, vmin=vmin, vmax=vmax, cmap='viridis', s=1)
-            ax.set_xlabel('PC1')
-            ax.set_ylabel('PC2')
-            ax.set_zlabel('PC3')
-        else:
-            scatter = ax.scatter(h_pca[:, 0], h_pca[:, 1], 
-                               c=magnitude_np, vmin=vmin, vmax=vmax, cmap='viridis', s=1)
-            ax.set_xlabel('PC1')
-            ax.set_ylabel('PC2')
-        
-        ax.set_title(type_name.replace('_', ' + '))
-    
-    # Add shared color bar
-    norm = Normalize(vmin=vmin, vmax=vmax)
-    sm = ScalarMappable(cmap='viridis', norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=axes, orientation='horizontal', fraction=0.1, pad=0.2)
-    cbar.set_label('Average L2 Norm of Steps')
-    
-    plt.show()
-
-def cumvars(types, use_temp=True):
-    n_states, n_samples, n_components = types['ih'].shape
-    results = {}
-    for step_type, step_tensor in types.items():
-        exp_var = np.zeros((n_states, n_components))
-        for i in tqdm(range(n_states)):
-            step_samples = step_tensor[i].cpu().numpy()
-            if use_temp:
-                temp = np.vstack((step_samples, -step_samples))
-                pca = PCA(n_components=n_components)
-                pca.fit(temp)
-            else:
-                pca = PCA(n_components=n_components)
-                pca.fit(step_samples)
-            exp_var[i] = pca.explained_variance_ratio_
-        cum_variance = np.cumsum(exp_var, axis=1)
-        avg_cum_variance = np.mean(cum_variance, axis=0)
-        noise_stacked = step_tensor.reshape(n_states * n_samples, n_components).cpu().numpy()
-        if use_temp:
-            temp_stacked = np.vstack((noise_stacked, -noise_stacked))
-            pca_stacked = PCA(n_components=n_components)
-            pca_stacked.fit(temp_stacked)
-        else:
-            pca_stacked = PCA(n_components=n_components)
-            pca_stacked.fit(noise_stacked)
-        cum_variance_stacked = np.cumsum(pca_stacked.explained_variance_ratio_)
-        results[step_type] = {'individual': cum_variance, 'average': avg_cum_variance, 'stacked': cum_variance_stacked}
-    fig, axes = plt.subplots(1, 6, figsize=(30, 5))
-    titles = {'ih': 'x @ ih.T', 'hh': 'h @ hh.T - h', 'relu': 'ReLU(x @ ih.T)', 'ih_relu': 'ReLU(x @ ih.T + h) - h', 'hh_relu': 'ReLU(h @ hh.T) - h', 'ih_relu_hh': 'ReLU(x @ ih.T + h @ hh.T) - h'}
-    for i, (step_type, title) in enumerate(titles.items()):
-        ax = axes[i]
-        for j in range(n_states):
-            ax.plot(range(1, n_components + 1), results[step_type]['individual'][j], alpha=0.05, color='gray')
-        ax.plot(range(1, n_components + 1), results[step_type]['average'], color='red', label='Avg over states', linewidth=2)
-        ax.plot(range(1, n_components + 1), results[step_type]['stacked'], color='blue', label='All concatenated', linewidth=2)
-        ax.axhline(y=0.95, color='gray', linestyle='--', alpha=0.7)
-        ax.axhline(y=0.80, color='gray', linestyle='--', alpha=0.7)
-        if i == 0:
-            ax.text(120, 0.96, '95%', fontsize=9)
-            ax.text(120, 0.81, '80%', fontsize=9)
-            ax.axvline(x=3, color='gray', linestyle='--', alpha=0.7)
-            ax.text(4, 0.05, '3 PC', fontsize=9)
-        else:
-            ax.axvline(x=3, color='gray', linestyle='--', alpha=0.7)
-        ax.set_xlabel('Principal Components')
-        if i == 0:
-            ax.set_ylabel('Explained Variance')
-        ax.set_title(title)
-        ax.set_xlim(0, n_components)
-        ax.set_ylim(0, 1.05)
-        if i == 3:
-            ax.legend(loc='lower right', fontsize=9)
-        ax.grid(False)
-    plt.tight_layout()
-    plt.show()
-
-def hcolors(h, types, plot_3d=False):
-    n_states, n_samples = h.shape[0], types['ih'].shape[1]
-    alignments = np.zeros((n_states, n_samples))
-    dot_products = np.zeros((n_states, n_samples))
-    for i in range(n_states):
-        alignments[i] = F.cosine_similarity(types['ih_relu'][i], types['hh_relu'][i], dim=1).cpu().numpy()
-        dot_products[i] = (types['ih_relu'][i] * types['hh_relu'][i]).sum(dim=1).cpu().numpy()
-    avg_alignments, avg_dot_products = np.mean(alignments, axis=1), np.mean(dot_products, axis=1)
-    alignments_ih_relu_ih_relu_hh = np.zeros((n_states, n_samples))
-    dot_products_ih_relu_ih_relu_hh = np.zeros((n_states, n_samples))
-    for i in range(n_states):
-        alignments_ih_relu_ih_relu_hh[i] = F.cosine_similarity(types['ih_relu'][i], types['ih_relu_hh'][i], dim=1).cpu().numpy()
-        dot_products_ih_relu_ih_relu_hh[i] = (types['ih_relu'][i] * types['ih_relu_hh'][i]).sum(dim=1).cpu().numpy()
-    avg_alignments_ih_relu_ih_relu_hh, avg_dot_products_ih_relu_ih_relu_hh = np.mean(alignments_ih_relu_ih_relu_hh, axis=1), np.mean(dot_products_ih_relu_ih_relu_hh, axis=1)
-    alignments_hh_relu_ih_relu_hh = np.zeros((n_states, n_samples))
-    dot_products_hh_relu_ih_relu_hh = np.zeros((n_states, n_samples))
-    for i in range(n_states):
-        alignments_hh_relu_ih_relu_hh[i] = F.cosine_similarity(types['hh_relu'][i], types['ih_relu_hh'][i], dim=1).cpu().numpy()
-        dot_products_hh_relu_ih_relu_hh[i] = (types['hh_relu'][i] * types['ih_relu_hh'][i]).sum(dim=1).cpu().numpy()
-    avg_alignments_hh_relu_ih_relu_hh, avg_dot_products_hh_relu_ih_relu_hh = np.mean(alignments_hh_relu_ih_relu_hh, axis=1), np.mean(dot_products_hh_relu_ih_relu_hh, axis=1)
-    n_components = types['ih'].shape[2]
-    cum_var_ih_relu = np.zeros((n_states, n_components))
-    cum_var_ih_relu_hh = np.zeros((n_states, n_components))
-    for i in range(n_states):
-        pca_ih_relu = PCA(n_components=n_components)
-        pca_ih_relu.fit(types['ih_relu'][i].cpu().numpy())
-        cum_var_ih_relu[i] = np.cumsum(pca_ih_relu.explained_variance_ratio_)
-        pca_ih_relu_hh = PCA(n_components=n_components)
-        pca_ih_relu_hh.fit(types['ih_relu_hh'][i].cpu().numpy())
-        cum_var_ih_relu_hh[i] = np.cumsum(pca_ih_relu_hh.explained_variance_ratio_)
-    components_ih_relu = np.argmax(cum_var_ih_relu >= 0.9, axis=1) + 1
-    components_ih_relu[~(cum_var_ih_relu[:, -1] >= 0.9)] = n_components
-    components_ih_relu_hh = np.argmax(cum_var_ih_relu_hh >= 0.9, axis=1) + 1
-    components_ih_relu_hh[~(cum_var_ih_relu_hh[:, -1] >= 0.9)] = n_components
-    pca_h = PCA(n_components=3)
-    h_pca = pca_h.fit_transform(h.cpu().numpy())
-    var_ratio = pca_h.explained_variance_ratio_
-    norm_comp1 = Normalize(vmin=components_ih_relu.min(), vmax=components_ih_relu.max())
-    norm_comp2 = Normalize(vmin=components_ih_relu_hh.min(), vmax=components_ih_relu_hh.max())
-    norm_align = Normalize(vmin=avg_alignments.min(), vmax=avg_alignments.max())
-    norm_dot = Normalize(vmin=avg_dot_products.min(), vmax=avg_dot_products.max())
-    min_cos = min(avg_alignments_ih_relu_ih_relu_hh.min(), avg_alignments_hh_relu_ih_relu_hh.min())
-    max_cos = max(avg_alignments_ih_relu_ih_relu_hh.max(), avg_alignments_hh_relu_ih_relu_hh.max())
-    norm_cos = Normalize(vmin=min_cos, vmax=max_cos)
-    min_dot_shared = min(avg_dot_products_ih_relu_ih_relu_hh.min(), avg_dot_products_hh_relu_ih_relu_hh.min())
-    max_dot_shared = max(avg_dot_products_ih_relu_ih_relu_hh.max(), avg_dot_products_hh_relu_ih_relu_hh.max())
-    norm_dot_shared = Normalize(vmin=min_dot_shared, vmax=max_dot_shared)
-    if not plot_3d:
-        fig, axes = plt.subplots(2, 4, figsize=(24, 10), sharex=True, sharey=True)
-        axes[0, 0].scatter(h_pca[:, 0], h_pca[:, 1], c=components_ih_relu, cmap='Reds', norm=norm_comp1, s=1)
-        axes[0, 0].set_title('Colored by ReLU(x @ ih.T + h) - h')
-        plt.colorbar(axes[0, 0].scatter(h_pca[:, 0], h_pca[:, 1], c=components_ih_relu, cmap='Reds', norm=norm_comp1, s=1), ax=axes[0, 0], label='Number of PCs to 90% Variance').set_ticks(np.arange(components_ih_relu.min(), components_ih_relu.max() + 1))
-        axes[0, 1].scatter(h_pca[:, 0], h_pca[:, 1], c=components_ih_relu_hh, cmap='Reds', norm=norm_comp2, s=1)
-        axes[0, 1].set_title('Colored by ReLU(x @ ih.T + h @ hh.T) - h')
-        plt.colorbar(axes[0, 1].scatter(h_pca[:, 0], h_pca[:, 1], c=components_ih_relu_hh, cmap='Reds', norm=norm_comp2, s=1), ax=axes[0, 1], label='Number of PCs to 90% Variance').set_ticks(np.arange(components_ih_relu_hh.min(), components_ih_relu_hh.max() + 1))
-        axes[0, 2].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_alignments, cmap='coolwarm', norm=norm_align, s=1)
-        axes[0, 2].set_title('Alignment of ih_relu and hh_relu')
-        plt.colorbar(axes[0, 2].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_alignments, cmap='coolwarm', norm=norm_align, s=1), ax=axes[0, 2], label='Average Cosine Similarity')
-        axes[0, 3].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_dot_products, cmap='coolwarm', norm=norm_dot, s=1)
-        axes[0, 3].set_title('Dot Product of ih_relu and hh_relu')
-        plt.colorbar(axes[0, 3].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_dot_products, cmap='coolwarm', norm=norm_dot, s=1), ax=axes[0, 3], label='Average Dot Product')
-        axes[1, 0].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_alignments_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1)
-        axes[1, 0].set_title('Alignment of ih_relu and ih_relu_hh')
-        plt.colorbar(axes[1, 0].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_alignments_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1), ax=axes[1, 0], label='Average Cosine Similarity')
-        axes[1, 1].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_alignments_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1)
-        axes[1, 1].set_title('Alignment of hh_relu and ih_relu_hh')
-        plt.colorbar(axes[1, 1].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_alignments_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1), ax=axes[1, 1], label='Average Cosine Similarity')
-        axes[1, 2].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_dot_products_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1)
-        axes[1, 2].set_title('Dot Product of ih_relu and ih_relu_hh')
-        plt.colorbar(axes[1, 2].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_dot_products_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1), ax=axes[1, 2], label='Average Dot Product')
-        axes[1, 3].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_dot_products_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1)
-        axes[1, 3].set_title('Dot Product of hh_relu and ih_relu_hh')
-        plt.colorbar(axes[1, 3].scatter(h_pca[:, 0], h_pca[:, 1], c=avg_dot_products_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1), ax=axes[1, 3], label='Average Dot Product')
-        for ax in axes[:, 0]:
-            ax.set_ylabel(f'PC2 ({var_ratio[1]*100:.2f}%)')
-        for ax in axes[-1, :]:
-            ax.set_xlabel(f'PC1 ({var_ratio[0]*100:.2f}%)')
-        plt.tight_layout()
-        plt.show()
-    else:
-        fig_3d = plt.figure(figsize=(24, 10))
-        axes_3d = np.empty((2, 4), dtype=object)
-        for i in range(2):
-            for j in range(4):
-                axes_3d[i, j] = fig_3d.add_subplot(2, 4, i*4 + j + 1, projection='3d')
-        axes_3d[0, 0].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=components_ih_relu, cmap='Reds', norm=norm_comp1, s=1)
-        axes_3d[0, 0].set_title('Colored by ReLU(x @ ih.T + h) - h')
-        axes_3d[0, 0].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[0, 0].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=components_ih_relu, cmap='Reds', norm=norm_comp1, s=1), ax=axes_3d[0, 0], label='Number of PCs to 90% Variance').set_ticks(np.arange(components_ih_relu.min(), components_ih_relu.max() + 1))
-        axes_3d[0, 1].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=components_ih_relu_hh, cmap='Reds', norm=norm_comp2, s=1)
-        axes_3d[0, 1].set_title('Colored by ReLU(x @ ih.T + h @ hh.T) - h')
-        axes_3d[0, 1].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[0, 1].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=components_ih_relu_hh, cmap='Reds', norm=norm_comp2, s=1), ax=axes_3d[0, 1], label='Number of PCs to 90% Variance').set_ticks(np.arange(components_ih_relu_hh.min(), components_ih_relu_hh.max() + 1))
-        axes_3d[0, 2].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_alignments, cmap='coolwarm', norm=norm_align, s=1)
-        axes_3d[0, 2].set_title('Alignment of ih_relu and hh_relu')
-        axes_3d[0, 2].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[0, 2].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_alignments, cmap='coolwarm', norm=norm_align, s=1), ax=axes_3d[0, 2], label='Average Cosine Similarity')
-        axes_3d[0, 3].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_dot_products, cmap='coolwarm', norm=norm_dot, s=1)
-        axes_3d[0, 3].set_title('Dot Product of ih_relu and hh_relu')
-        axes_3d[0, 3].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[0, 3].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_dot_products, cmap='coolwarm', norm=norm_dot, s=1), ax=axes_3d[0, 3], label='Average Dot Product')
-        axes_3d[1, 0].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_alignments_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1)
-        axes_3d[1, 0].set_title('Alignment of ih_relu and ih_relu_hh')
-        axes_3d[1, 0].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[1, 0].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_alignments_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1), ax=axes_3d[1, 0], label='Average Cosine Similarity')
-        axes_3d[1, 1].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_alignments_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1)
-        axes_3d[1, 1].set_title('Alignment of hh_relu and ih_relu_hh')
-        axes_3d[1, 1].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[1, 1].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_alignments_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_cos, s=1), ax=axes_3d[1, 1], label='Average Cosine Similarity')
-        axes_3d[1, 2].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_dot_products_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1)
-        axes_3d[1, 2].set_title('Dot Product of ih_relu and ih_relu_hh')
-        axes_3d[1, 2].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[1, 2].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_dot_products_ih_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1), ax=axes_3d[1, 2], label='Average Dot Product')
-        axes_3d[1, 3].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_dot_products_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1)
-        axes_3d[1, 3].set_title('Dot Product of hh_relu and ih_relu_hh')
-        axes_3d[1, 3].view_init(elev=40, azim=80)
-        plt.colorbar(axes_3d[1, 3].scatter(h_pca[:, 0], h_pca[:, 1], h_pca[:, 2], c=avg_dot_products_hh_relu_ih_relu_hh, cmap='coolwarm', norm=norm_dot_shared, s=1), ax=axes_3d[1, 3], label='Average Dot Product')
-        for ax in axes_3d.flat:
-            ax.set_xlabel(f'PC1 ({var_ratio[0]*100:.2f}%)')
-            ax.set_ylabel(f'PC2 ({var_ratio[1]*100:.2f}%)')
-            ax.set_zlabel(f'PC3 ({var_ratio[2]*100:.2f}%)')
-        plt.tight_layout()
-        plt.show()
-
-def noise_cos(model_path, n_states=1000, n_samples=1000):
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    ih = rnn.rnn.weight_ih_l0.data 
-    hh = rnn.rnn.weight_hh_l0.data 
-
-    h = torch.zeros((n_states, 150)).to(ih.device)
-    for i in tqdm(range(n_states), desc="Generating hidden states"):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
-        h[i] = torch.relu(x @ ih.T + (h[i-1] @ hh.T if i > 0 else 0))
-
-    noise_ih = np.zeros((n_states, n_samples, 150))
-    noise_relu = np.zeros((n_states, n_samples, 150))
-    noise_ih_relu = np.zeros((n_states, n_samples, 150))
-    noise_ih_relu_hh = np.zeros((n_states, n_samples, 150))
-
-    for i in tqdm(range(n_states), desc="Computing noise samples"):
-        for j in range(n_samples):
-            x = torch.normal(mean=0, std=1, size=(100,)).float().to(ih.device)
-            noise_ih[i, j] = (x @ ih.T).cpu().detach().numpy()
-            noise_relu[i, j] = torch.relu(x @ ih.T).cpu().detach().numpy()
-            noise_ih_relu[i, j] = (torch.relu(x @ ih.T + h[i]) - h[i]).cpu().detach().numpy()
-            noise_ih_relu_hh[i, j] = (torch.relu(x @ ih.T + h[i] @ hh.T) - h[i]).cpu().detach().numpy()
-    
-    noise_means = {
-        'ih': np.mean(noise_ih, axis=1),
-        'relu': np.mean(noise_relu, axis=1),
-        'ih_relu': np.mean(noise_ih_relu, axis=1),
-        'ih_relu_hh': np.mean(noise_ih_relu_hh, axis=1)
-    }
-    
-    cos_sim = {
-        'ih': np.zeros((n_states, n_samples)),
-        'relu': np.zeros((n_states, n_samples)),
-        'ih_relu': np.zeros((n_states, n_samples)),
-        'ih_relu_hh': np.zeros((n_states, n_samples))
-    }
-    
-    for mod in ['ih', 'relu', 'ih_relu', 'ih_relu_hh']:
-        noise_data = noise_ih if mod == 'ih' else noise_relu if mod == 'relu' else noise_ih_relu if mod == 'ih_relu' else noise_ih_relu_hh
-        for i in tqdm(range(n_states), desc=f"Computing cosine similarity ({mod})"):
-            for j in range(n_samples):
-                noise_vec = noise_data[i, j]
-                mean_vec = noise_means[mod][i]
-                cos_sim[mod][i, j] = np.dot(noise_vec, mean_vec) / (np.linalg.norm(noise_vec) * np.linalg.norm(mean_vec))
-    
-    cos_sim_mean = {mod: np.mean(cos_sim[mod], axis=1) for mod in cos_sim}
-    cos_sim_std = {mod: np.std(cos_sim[mod], axis=1) for mod in cos_sim}
-    
-    fig, axs = plt.subplots(1, 4, figsize=(20, 5))
-    titles = {
-        'ih': 'x @ ih.T',
-        'relu': 'ReLU(x @ ih.T)',
-        'ih_relu': 'ReLU(x @ ih.T + h) - h',
-        'ih_relu_hh': 'ReLU(x @ ih.T + h @ hh.T) - h'
-    }
-    
-    for i, mod in enumerate(['ih', 'relu', 'ih_relu', 'ih_relu_hh']):
-        ax = axs[i]
-        ax.errorbar(np.arange(n_states), cos_sim_mean[mod], yerr=cos_sim_std[mod], 
-                    fmt='o', markersize=2, color='darkgreen', ecolor='lightgreen', capsize=2)
-        ax.text(0.85, 0.25, f'Mean: {np.mean(cos_sim_mean[mod]):.3f}\nStd: {np.mean(cos_sim_std[mod]):.3f}', 
-                ha='center', va='bottom', transform=ax.transAxes)
-        ax.set_title(titles[mod], fontsize=12, fontweight='bold')
-        ax.set_ylim(0, 1)
-        ax.set_xlabel('# of Random Initial Conditions', fontsize=10)
-        if i == 0:
-            ax.set_ylabel('Cosine Similarity', fontsize=10)
-        if i > 0:
-            ax.set_yticks([])
-    
-    plt.suptitle('Cosine Similarity between Random Noise and Mean at ICs', fontsize=16, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
-
-def jacobians(model_path, num_points=10000, epsilon=0.1, delta=0.01):
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-    device = ih.device
-
-    def rec_only_step(h_prev):
-        return torch.relu(h_prev @ hh.T)
-
-    def input_only_step(h_prev):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(h_prev + x @ ih.T)
-
-    def full_step(h_prev):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(h_prev @ hh.T + x @ ih.T)
-
-    h = torch.zeros((num_points, 150)).to(device)
-    for i in range(1, num_points):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
-
-    # Define modalities
-    modalities = {
-        'rec_only': rec_only_step,
-        'input_only': input_only_step,
-        'full': full_step
-    }
-
-    metrics = {}
-    for modality in modalities:
-        metrics[modality] = {
-            'max_magnitude': np.zeros(num_points),
-            'num_above_1': np.zeros(num_points),
-            'num_near_1': np.zeros(num_points),
-            'max_imag': np.zeros(num_points),
-            'num_with_imag': np.zeros(num_points),
-            'rank': np.zeros(num_points)
-        }
-
-    # Compute Jacobians and metrics
-    for i in tqdm(range(num_points)):
-        h_prev = h[i].clone().requires_grad_(True)
-        for modality, step_func in modalities.items():
-            J = jacobian(step_func, h_prev)
-            eigenvalues = torch.linalg.eigvals(J)
-            magnitudes = torch.abs(eigenvalues)
-            imag_parts = eigenvalues.imag
-
-            # Existing metrics
-            metrics[modality]['max_magnitude'][i] = torch.max(magnitudes).item()
-            metrics[modality]['num_above_1'][i] = (magnitudes > 1).sum().item()
-            metrics[modality]['num_near_1'][i] = ((magnitudes > 1 - epsilon) & (magnitudes < 1 + epsilon)).sum().item()
-            metrics[modality]['max_imag'][i] = torch.max(torch.abs(imag_parts)).item()
-            metrics[modality]['num_with_imag'][i] = (torch.abs(imag_parts) > delta).sum().item()
-
-            # Compute rank using SVD
-            U, S, Vh = torch.svd(J)
-            tolerance = 1e-10
-            rank = torch.sum(S > tolerance).item()
-            metrics[modality]['rank'][i] = rank
-
-    # Perform PCA
-    pca = PCA(n_components=2)
-    h_2d = pca.fit_transform(h.cpu().numpy())
-
-    # Create 3x6 plot grid 
-    fig, axes = plt.subplots(3, 6, figsize=(30, 15))
-    fig.suptitle('RNN Dynamics Analysis', fontsize=16)
-
-    modality_names = ['Recurrent Only', 'Input Only', 'Full Step']
-    metric_names = [
-        'Max |λ|',
-        'Num |λ| > 1',
-        'Num |λ| ≈ 1',
-        'Max |Imag|',
-        'Num with Imag',
-        'Rank'
-    ]
-
-    for row, modality in enumerate(modalities):
-        for col, metric_key in enumerate(['max_magnitude', 'num_above_1', 'num_near_1', 
-                                        'max_imag', 'num_with_imag', 'rank']):
-            ax = axes[row, col]
-            scatter = ax.scatter(h_2d[:, 0], h_2d[:, 1], 
-                               c=metrics[modality][metric_key], 
-                               cmap='viridis', s=1)
-            ax.set_title(f'{modality_names[row]} - {metric_names[col]}')
-            ax.set_xlabel('PC1')
-            ax.set_ylabel('PC2')
-            # Set ticks every 5 units
-            ax.xaxis.set_major_locator(MultipleLocator(5))
-            ax.yaxis.set_major_locator(MultipleLocator(5))
-            fig.colorbar(scatter, ax=ax, label=metric_names[col])
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
-def jacobians_dir(model_path, num_points=10000):
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-    device = ih.device
-
-    def rec_only_step(h_prev):
-        return torch.relu(h_prev @ hh.T)
-
-    def input_only_step(h_prev):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(h_prev + x @ ih.T)
-
-    def full_step(h_prev):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        return torch.relu(h_prev @ hh.T + x @ ih.T)
-
-    h = torch.zeros((num_points, 150)).to(device)
-    for i in range(1, num_points):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
-
-    metrics = {
-        'full': {
-            'max_magnitude': np.zeros(num_points),
-            'num_above_1': np.zeros(num_points)
-        }
-    }
-
-    for i in range(num_points):
-        h_prev = h[i].clone().requires_grad_(True)
-        J = jacobian(rec_only_step, h_prev)
-        eigenvalues = torch.linalg.eigvals(J)
-        magnitudes = torch.abs(eigenvalues)
-
-        metrics['full']['max_magnitude'][i] = torch.max(magnitudes).item()
-        metrics['full']['num_above_1'][i] = (magnitudes > 1).sum().item()
-
-    # Perform PCA
-    pca = PCA(n_components=2)
-    h_2d = pca.fit_transform(h.cpu().numpy())
-    
-    # Find points where max |λ| > 1.8 and num |λ| > 1 = 1 for full step
-    condition = (metrics['full']['max_magnitude'] > 1.4) & (metrics['full']['num_above_1'] == 1)
-    indices = np.where(condition)[0]
-    
-    # Select a subset of points (e.g., first 150) to avoid cluttering the plot
-    selected_indices = indices[:150] if len(indices) > 150 else indices
-
-    # Compute directions at these points, accounting for orientation
-    directions_2d = []
-    positions_2d = []
-    for i in selected_indices:
-        h_prev = h[i].clone().requires_grad_(True)
-        J = jacobian(rec_only_step, h_prev)
-        
-        # Compute eigenvalues and eigenvectors
-        evals, evecs = torch.linalg.eig(J)
-        magnitudes = torch.abs(evals)
-        
-        # Find the dominant eigenvalue
-        idx = torch.argmax(magnitudes)
-        dominant_eval = evals[idx]
-        dominant_evec = evecs[:, idx]
-        v = dominant_evec.real
-        
-        # Normalize the eigenvector
-        v = v / torch.norm(v)
-        
-        # Adjust orientation based on the sign of the real part of the eigenvalue
-        if dominant_eval.real < 0:
-            v = -v  # Flip the direction if eigenvalue is negative
-        
-        # Project to 2D PCA space
-        v_2d = pca.transform(v.cpu().numpy().reshape(1, -1))[0]
-        
-        directions_2d.append(v_2d)
-        positions_2d.append(h_2d[i])
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    fig.suptitle('RNN Dynamics: REC Only - Max |λ| (Orientation Adjusted)', fontsize=16)
-    scatter = ax.scatter(h_2d[:, 0], h_2d[:, 1], 
-                         c=metrics['full']['max_magnitude'], 
-                         cmap='viridis', s=1)
-    ax.set_title('Full Step - Max |λ|')
-    ax.set_xlabel('PC1')
-    ax.set_ylabel('PC2')
-    fig.colorbar(scatter, ax=ax, label='Max |λ|')
-
-    # Add direction arrows with corrected orientation
-    for pos, direction in zip(positions_2d, directions_2d):
-        ax.arrow(pos[0], pos[1], direction[0] * 0.5, direction[1] * 0.5, head_width=0.1, head_length=0.2, fc='red', ec='red')
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
-
-def rnn_df(model_path, n_states=5000, n_samples=1000):
-    # Load the RNN model
+from scipy.stats import norm, pearsonr, gaussian_kde
+from scipy.interpolate import griddata
+from scipy.ndimage import gaussian_filter1d
+import plotly.graph_objects as go
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
+
+def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20, T=1000):
+    # Load model
     rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
     rnn.load_state_dict(torch.load(model_path))
     ih = rnn.rnn.weight_ih_l0.data
     hh = rnn.rnn.weight_hh_l0.data
     fc = rnn.fc.weight.data
     device = ih.device
-
-    # Generate 30,000 hidden states for PCA
-    h = torch.zeros((30000, 150)).to(device)
-    for i in range(1, 30000):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
-
-    pca = PCA()
-    pca.fit(h.cpu().numpy())
-
-    # Initialize storage
-    h_traj = []
-    metrics = {
-        'alignment_ih_full': [],
-        'alignment_hh_full': [],
-        'alignment_ih_hh': [],
-        'jacobian_hh_max_eigenvalue': [],
-        'jacobian_hh_eigenvalues_gt_1': [],
-        'jacobian_hh_max_imag': [],
-        'jacobian_full_max_eigenvalue': [],
-        'jacobian_full_eigenvalues_gt_1': [],
-        'jacobian_full_max_imag': [],
-        'mag_ih': [],
-        'mag_hh': [],
-        'ih_pca_dim': [],
-        'full_pca_dim': [],
-        'main_align': [],
-        'main_mag': [],
-        'logit0': [],
-        'logit2': [],
-        'avg_sign_changes': [],
-        'mask_count': [],
-        'transition': [],
-        'logits': [],
-        'mask_hh': [],
-        'mask_full': [],
-        'mask_h': [],
-        'h_mask': []
-    }
-    x_t_list = []
-    ev_full_list = []
-    ev_hh_list = []
-
-    # Generate trajectory
-    h_prev = torch.zeros(150).to(device)
-    for t in tqdm(range(n_states)):
-        x_t = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        h_t = torch.relu(x_t @ ih.T + h_prev @ hh.T)
-
-        # Compute logits
-        logits = h_prev @ fc.T
-        probs = F.softmax(logits, dim=0)
-        most_probable = torch.argmax(probs).item()
-        initial_logit = logits[most_probable].item()
-
-        # Store logits for array_metrics
-        metrics['logits'].append(logits.cpu().numpy())
-        logit0 = probs[0].item()
-        logit2 = probs[2].item()
-
-        # Compute contributions
-        hh_relu_t = torch.relu(h_prev @ hh.T) - h_prev
-        ih_relu_t = torch.relu(x_t @ ih.T + h_prev) - h_prev
-        full_relu_t = h_t - h_prev
-
-        # Cosine similarities
-        cos_ih_full = F.cosine_similarity(ih_relu_t, full_relu_t, dim=0).item()
-        cos_hh_full = F.cosine_similarity(hh_relu_t, full_relu_t, dim=0).item()
-        cos_ih_hh = F.cosine_similarity(ih_relu_t, hh_relu_t, dim=0).item()
-
-        # Magnitudes
-        mag_ih = torch.norm(torch.relu(x_t @ ih.T)).item()
-        mag_hh = torch.norm(torch.relu(h_prev @ hh.T)).item()
-
-        # PCA analysis
-        x_batch = torch.normal(mean=0, std=1, size=(n_samples, 100)).float().to(device)
-        ih_relu_batch = torch.relu(x_batch @ ih.T + h_prev) - h_prev
-        ih_relu_hh_batch = torch.relu(x_batch @ ih.T + h_prev @ hh.T) - h_prev
-
-        pca_ih = PCA()
-        pca_ih.fit(ih_relu_batch.cpu().numpy())
-        cum_var = np.cumsum(pca_ih.explained_variance_ratio_)
-        ih_pca_dim = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
-
-        pca_ih_hh = PCA()
-        pca_ih_hh.fit(ih_relu_hh_batch.cpu().numpy())
-        cum_var = np.cumsum(pca_ih_hh.explained_variance_ratio_)
-        full_pca_dim = np.argmax(cum_var >= 0.9) + 1 if cum_var[-1] >= 0.9 else 150
-
-        # Recurrent-only Jacobian
-        pre_activation_hh = h_prev @ hh.T
-        mask_hh = (pre_activation_hh > 0).float()
-        J_hh = torch.diag(mask_hh) @ hh.T
-        eigenvalues_hh, eigenvectors_hh = torch.linalg.eig(J_hh)
-        magnitudes_hh = torch.abs(eigenvalues_hh)
-        max_idx_hh = torch.argmax(magnitudes_hh)
-        ev_hh = eigenvectors_hh[:, max_idx_hh].real
-        eigenvalues_hh = eigenvalues_hh.cpu().numpy()
-        magnitudes_hh = np.abs(eigenvalues_hh)
-        imag_parts_hh = np.imag(eigenvalues_hh)
-        jacobian_hh_max_eigenvalue = np.max(magnitudes_hh)
-        jacobian_hh_eigenvalues_gt_1 = np.sum(magnitudes_hh > 1)
-        jacobian_hh_max_imag = np.max(np.abs(imag_parts_hh))
-
-        # Full step Jacobian
-        pre_activation_full = x_t @ ih.T + h_prev @ hh.T
-        mask_full = (pre_activation_full > 0).float()
-        J_full = torch.diag(mask_full) @ hh.T
-        eigenvalues_full, eigenvectors_full = torch.linalg.eig(J_full)
-        magnitudes_full = torch.abs(eigenvalues_full)
-        max_idx_full = torch.argmax(magnitudes_full)
-        ev_full = eigenvectors_full[:, max_idx_full].real
-        eigenvalues_full = eigenvalues_full.cpu().numpy()
-        magnitudes_full = np.abs(eigenvalues_full)
-        imag_parts_full = np.imag(eigenvalues_full)
-        jacobian_full_max_eigenvalue = np.max(magnitudes_full)
-        jacobian_full_eigenvalues_gt_1 = np.sum(magnitudes_full > 1)
-        jacobian_full_max_imag = np.max(np.abs(imag_parts_full))
-
-        # Compute average sign changes
-        sign_changes_list = []
-        for _ in range(10):
-            h_current = h_prev.clone()
-            prev_logit = initial_logit
-            sign_changes = 0
-            prev_delta_sign = None
-            steps = 0
-            while True:
-                x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-                h_current = torch.relu(x @ ih.T + h_current @ hh.T)
-                new_logits = h_current @ fc.T
-                new_probs = F.softmax(new_logits, dim=0)
-                new_most_probable = torch.argmax(new_probs).item()
-                steps += 1
-
-                current_logit = new_logits[most_probable].item()
-                delta_logit = current_logit - prev_logit
-                if delta_logit > 0:
-                    current_sign = 1
-                elif delta_logit < 0:
-                    current_sign = -1
-                else:
-                    current_sign = 0
-                if prev_delta_sign is not None and current_sign != prev_delta_sign and current_sign != 0:
-                    sign_changes += 1
-                prev_delta_sign = current_sign
-                prev_logit = current_logit
-
-                if new_most_probable != most_probable or steps > 10000:
-                    sign_changes_list.append(sign_changes)
-                    break
-        avg_sign_changes = np.mean(sign_changes_list)
-
-        mask_h = (h_prev > 0).float()
-        metrics['mask_hh'].append(mask_hh.cpu().numpy())
-        metrics['mask_full'].append(mask_full.cpu().numpy())
-        metrics['mask_h'].append(mask_h.cpu().numpy())
-        metrics['h_mask'].append(h_prev.cpu().numpy())
-        mask_count = np.sum((mask_full.cpu().numpy() - mask_hh.cpu().numpy()) == 1)
-
-        # Indicators
-        main_align = 1 if cos_ih_full > cos_hh_full else 0
-        main_mag = 1 if mag_ih > mag_hh else 0
-
-        # Store data
-        h_traj.append(h_t.cpu().numpy())
-        metrics['alignment_ih_full'].append(cos_ih_full)
-        metrics['alignment_hh_full'].append(cos_hh_full)
-        metrics['alignment_ih_hh'].append(cos_ih_hh)
-        metrics['jacobian_hh_max_eigenvalue'].append(jacobian_hh_max_eigenvalue)
-        metrics['jacobian_hh_eigenvalues_gt_1'].append(jacobian_hh_eigenvalues_gt_1)
-        metrics['jacobian_hh_max_imag'].append(jacobian_hh_max_imag)
-        metrics['jacobian_full_max_eigenvalue'].append(jacobian_full_max_eigenvalue)
-        metrics['jacobian_full_eigenvalues_gt_1'].append(jacobian_full_eigenvalues_gt_1)
-        metrics['jacobian_full_max_imag'].append(jacobian_full_max_imag)
-        metrics['mag_ih'].append(mag_ih)
-        metrics['mag_hh'].append(mag_hh)
-        metrics['ih_pca_dim'].append(ih_pca_dim)
-        metrics['full_pca_dim'].append(full_pca_dim)
-        metrics['main_align'].append(main_align)
-        metrics['main_mag'].append(main_mag)
-        metrics['logit0'].append(logit0)
-        metrics['logit2'].append(logit2)
-        metrics['avg_sign_changes'].append(avg_sign_changes)
-        metrics['mask_count'].append(mask_count)
-        x_t_list.append(x_t.cpu().numpy())
-        ev_full_list.append(ev_full.cpu().numpy())
-        ev_hh_list.append(ev_hh.cpu().numpy())
-
-        h_prev = h_t
-
-    # Compute transitions
-    argmax_values = np.array([np.argmax(l) for l in metrics['logits']])
-    transition = np.zeros(len(argmax_values), dtype=int)
-    for i in range(1, len(argmax_values)):
-        prev, curr = argmax_values[i-1], argmax_values[i]
-        if prev == 0 and curr == 2:
-            transition[i] = 1
-        elif prev == 2 and curr == 0:
-            transition[i] = 2
-    metrics['transition'] = transition.tolist()
-
-    # Build DataFrame
-    h_df = pd.DataFrame(np.array(h_traj), columns=[f'h_{i}' for i in range(150)])
-    metrics_df = pd.DataFrame(metrics)
-    df = pd.concat([h_df, metrics_df], axis=1)
-
-    # Convert lists to arrays
-    h_array = np.array(h_traj)
-    x_array = np.array(x_t_list)  # Shape: (n_states, 100)
-    ev_full_all = np.array(ev_full_list)  # Shape: (n_states, 150)
-    ev_hh_all = np.array(ev_hh_list)  # Shape: (n_states, 150)
-
-    return df, pca, h_array, x_array, ev_full_all, ev_hh_all
-
-def transition_df(model_path, n_states=5000, n_samples=1000):
-    df, pca, _, x_t_all, ev_full_all, ev_hh_all = rnn_df(model_path, n_states=n_states, n_samples=n_samples)
-    all_windows = []
-    h_windows = []
-    x_t_windows = []
-    ev_full_windows = []
-    ev_hh_windows = []
-    for t_type in (1, 2):
-        transition_idx = np.where(df["transition"].values == t_type)[0]
-        transition_idx = transition_idx[transition_idx >= 10]
-        for local_id, idx in enumerate(transition_idx):
-            h_window = df.iloc[idx - 10 : idx + 1, :150].values  # Shape: (11, 150)
-            window_rows = df.iloc[idx - 10 : idx + 1, 150:].copy()  # Metrics columns only
-            window_rows["transition_type"] = t_type
-            window_rows["transition_id"] = local_id
-            window_rows["transition_pos"] = np.arange(10, -1, -1)
-            all_windows.append(window_rows)
-            h_windows.append(h_window)
-            x_t_window = x_t_all[idx - 10 : idx + 1]  # Shape: (11, 100)
-            ev_full_window = ev_full_all[idx - 10 : idx + 1]  # Shape: (11, 150)
-            ev_hh_window = ev_hh_all[idx - 10 : idx + 1]  # Shape: (11, 150)
-            x_t_windows.append(x_t_window)
-            ev_full_windows.append(ev_full_window)
-            ev_hh_windows.append(ev_hh_window)
-    windows_df = pd.concat(all_windows, ignore_index=True)
-    h_array = np.stack(h_windows)  # Shape: (n_transitions, 11, 150)
-    x_t_array = np.stack(x_t_windows)  # Shape: (n_transitions, 11, 100)
-    ev_full_array = np.stack(ev_full_windows)  # Shape: (n_transitions, 11, 150)
-    ev_hh_array = np.stack(ev_hh_windows)  # Shape: (n_transitions, 11, 150)
-    return windows_df, pca, h_array, x_t_array, ev_full_array, ev_hh_array
-
-def tr_prob(model_path, n_states=5000, n_samples=1000, modality="average"):
-    if modality not in ["average", "mode", "median"]:
-        raise ValueError("modality must be 'average' or 'mode'")
     
-    # Load model
-    rnn = RNN(input_size=100, hidden_size=150, num_layers=1, output_size=3)
-    rnn.load_state_dict(torch.load(model_path))
-    ih = rnn.rnn.weight_ih_l0.data
-    hh = rnn.rnn.weight_hh_l0.data
-    fc = rnn.fc.weight.data 
-    device = ih.device
+    # Initialize hidden state and warm-up
+    h = torch.zeros(150).to(device)
+    for _ in range(t0):
+        x = torch.normal(mean=0, std=sigma, size=(100,)).float().to(device)
+        h = torch.relu(x @ ih.T + h @ hh.T)
     
-    # Generate hidden states
-    h = torch.zeros((30000, 150)).to(device)
-    for i in range(1, 30000):
-        x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
-        h[i] = torch.relu(x @ ih.T + h[i-1] @ hh.T)
-    
-    # PCA transformation
-    pca = PCA(n_components=2)
-    h_np = h.cpu().numpy()
-    pca.fit(h_np)
-    
-    # Sample states
-    state_indices = np.random.choice(range(1, 30000), size=n_states, replace=False)
-    selected_states = h[state_indices]
-    state_projections = pca.transform(selected_states.cpu().numpy())
-    
-    # Initialize arrays for metrics
-    steps_metric = np.zeros(n_states)
-    sign_changes_metric = np.zeros(n_states)
-    
-    # Process each state
-    for idx, i in tqdm(enumerate(range(n_states)), total=n_states, desc="Processing states"):
-        state = selected_states[i]
-        logits = state @ fc.T
-        probs = softmax(logits, dim=0)
+    # Generate sequence of hidden states
+    h_sequence = []
+    for _ in range(T):
+        x = torch.normal(mean=0, std=sigma, size=(100,)).float().to(device)
+        h = torch.relu(x @ ih.T + h @ hh.T)
+        h_sequence.append(h)
+    h_sequence = torch.stack(h_sequence)
+
+    def compute_metrics(h, ih, hh, fc, sigma, max_steps, n_samples, device):
+        logits = h @ fc.T
+        probs = torch.softmax(logits, dim=0)
         most_probable = torch.argmax(probs).item()
         initial_logit = logits[most_probable].item()
         
         steps_list = []
         sign_changes_list = []
         
-        # Sample trajectories
         for _ in range(n_samples):
-            h_current = state.clone()
+            h_current = h.clone()
             prev_logit = initial_logit
             sign_changes = 0
             prev_delta_sign = None
             steps = 0
-            while True:
-                x = torch.normal(mean=0, std=1, size=(100,)).float().to(device)
+            while steps < max_steps:
+                x = torch.normal(mean=0, std=sigma, size=(100,)).float().to(device)
                 h_current = torch.relu(x @ ih.T + h_current @ hh.T)
                 new_logits = h_current @ fc.T
-                new_probs = softmax(new_logits, dim=0)
+                new_probs = torch.softmax(new_logits, dim=0)
                 new_most_probable = torch.argmax(new_probs).item()
-                steps += 1
-                
+                if new_most_probable != most_probable:
+                    steps_list.append(steps + 1)
+                    sign_changes_list.append(sign_changes)
+                    break
                 current_logit = new_logits[most_probable].item()
                 delta_logit = current_logit - prev_logit
-                if delta_logit > 0:
-                    current_sign = 1
-                elif delta_logit < 0:
-                    current_sign = -1
-                else:
-                    current_sign = 0
+                current_sign = 1 if delta_logit > 0 else (-1 if delta_logit < 0 else 0)
                 if prev_delta_sign is not None and current_sign != prev_delta_sign and current_sign != 0:
                     sign_changes += 1
                 prev_delta_sign = current_sign
                 prev_logit = current_logit
-                
-                if new_most_probable != most_probable or steps > 10000:
-                    steps_list.append(steps)
-                    sign_changes_list.append(sign_changes)
-                    break
+                steps += 1
+            else:
+                steps_list.append(max_steps)
+                sign_changes_list.append(sign_changes)
         
-        # Compute metric based on modality
-        if modality == "average":
-            steps_metric[idx] = np.mean(steps_list)
-            sign_changes_metric[idx] = np.mean(sign_changes_list)
-        elif modality == "mode":  # mode
-            steps_metric[idx] = mode(steps_list, keepdims=True)[0][0]
-            sign_changes_metric[idx] = mode(sign_changes_list, keepdims=True)[0][0]
-        elif modality == "median":  # median
-            steps_metric[idx] = np.median(steps_list)
-            sign_changes_metric[idx] = np.median(sign_changes_list)
+        avg_steps = np.mean(steps_list)
+        avg_sign_changes = np.mean(sign_changes_list)
+        return avg_steps, avg_sign_changes
     
-    # Plotting
-    fig = plt.figure(figsize=(25, 5))
+    # Compute residency time and sign changes for each hidden state
+    avg_steps_list = []
+    avg_sign_changes_list = []
+    for h in tqdm(h_sequence, desc="Computing metrics"):
+        avg_steps, avg_sign_changes = compute_metrics(h, ih, hh, fc, sigma, max_steps, n_samples, device)
+        avg_steps_list.append(avg_steps)
+        avg_sign_changes_list.append(avg_sign_changes)
     
-    # Plot 1: PCA Projection - Transition Steps
-    ax1 = fig.add_subplot(141)
-    colors = {1: 'red', 2: 'blue', 3: 'green', 4: 'orange', 5: 'purple', 6: 'yellow', 7: 'pink', 8: 'salmon'}
-    for steps in range(1, 9):
-        mask = np.isclose(steps_metric, steps, atol=0.3)
-        if np.any(mask):
-            ax1.scatter(state_projections[mask, 0], state_projections[mask, 1], 
-                       c=colors[steps], alpha=0.8, label=f'{steps} steps')
-    mask_other = ~np.isin(np.round(steps_metric), list(range(1, 9)))
-    if np.any(mask_other):
-        scatter = ax1.scatter(state_projections[mask_other, 0], state_projections[mask_other, 1], 
-                            c=steps_metric[mask_other], cmap='viridis', alpha=0.6, 
-                            label=f'Other {modality} steps')
-        plt.colorbar(scatter, label=f'{modality.capitalize()} Steps Until Output Switch')
-    ax1.set_xlabel('PCA Component 1')
-    ax1.set_ylabel('PCA Component 2')
-    ax1.set_title(f'PCA Projection: {modality.capitalize()} Transition Steps')
-    ax1.legend()
-    ax1.grid(True)
+    avg_steps = np.array(avg_steps_list)
+    avg_sign_changes = np.array(avg_sign_changes_list)
     
-    # Plot 2: Histogram - Transition Steps
-    ax2 = fig.add_subplot(142)
-    ax2.hist(steps_metric, bins=int(max(steps_metric)) if max(steps_metric) > 0 else 1, edgecolor='black')
-    ax2.set_xticks(np.arange(0, int(max(steps_metric)) + 1, 1))
-    ax2.set_xlabel(f'{modality.capitalize()} Timesteps to Transition')
-    ax2.set_ylabel('Frequency')
-    ax2.set_title(f'Distribution of {modality.capitalize()} Transition Times')
-    ax2.grid(True, alpha=0.3)
+    # Apply PCA
+    h_np = h_sequence.cpu().numpy()
+    pca = PCA(n_components=2)
+    h_pca = pca.fit_transform(h_np)
     
-    # Plot 3: PCA Projection - Sign Changes
-    ax3 = fig.add_subplot(143)
-    mask_red = sign_changes_metric <= 1
-    if np.any(mask_red):
-        ax3.scatter(state_projections[mask_red, 0], state_projections[mask_red, 1], 
-                    c='red', alpha=0.8, label='< 1 Sign Changes')
-    mask_other = ~mask_red
-    if np.any(mask_other):
-        scatter = ax3.scatter(state_projections[mask_other, 0], state_projections[mask_other, 1], 
-                             c=sign_changes_metric[mask_other], cmap='plasma', alpha=0.6)
-        plt.colorbar(scatter, label=f'{modality.capitalize()} Sign Changes Before Transition')
-    ax3.set_xlabel('PCA Component 1')
-    ax3.set_ylabel('PCA Component 2')
-    ax3.set_title(f'PCA Projection: {modality.capitalize()} Sign Changes')
-    ax3.legend()
-    ax3.grid(True)
+    # Compute number of unstable eigenvalues for each hidden state
+    num_unstable_list = []
+    for h in h_sequence:
+        x = torch.normal(mean=0, std=sigma, size=(100,)).float().to(device)
+        pre_act = x @ ih.T + h @ hh.T
+        D = torch.diag((pre_act > 0).float())
+        J = D @ hh
+        eigvals = torch.linalg.eigvals(J)
+        mobius = (eigvals - 1) / (eigvals + 1 + 1e-8)
+        num_unstable = (mobius.real > 0).sum().item()
+        num_unstable_list.append(num_unstable)
     
-    # Plot 4: Histogram - Sign Changes
-    ax4 = fig.add_subplot(144)
-    ax4.hist(sign_changes_metric, bins=int(max(sign_changes_metric)) if max(sign_changes_metric) > 0 else 1, edgecolor='black')
-    ax4.set_xticks(np.arange(0, int(max(sign_changes_metric)) + 1, 1))
-    ax4.set_xlabel(f'{modality.capitalize()} Sign Changes')
-    ax4.set_ylabel('Frequency')
-    ax4.set_title(f'Distribution of {modality.capitalize()} Sign Changes')
-    ax4.grid(True, alpha=0.3)
+    # Segment hidden states into three groups
+    cutoffcol = 2
+    logits = torch.softmax(h_sequence @ fc.T, dim=1)
+    group1 = avg_steps < 2
+    group2 = (avg_steps >= cutoffcol) & (avg_steps <= 4*cutoffcol)
+    group3 = (avg_steps > 4*cutoffcol) & ((logits[:, 0].cpu().numpy() > 0.8) | (logits[:, 2].cpu().numpy() > 0.8))
+    print(group1.sum(), group2.sum(), group3.sum())
+    
+    # Compute average number of unstable eigenvalues and residency time for each group
+    avg_num_unstable_group1 = np.mean([num_unstable_list[i] for i in range(T) if group1[i]]) if np.any(group1) else 0
+    avg_num_unstable_group2 = np.mean([num_unstable_list[i] for i in range(T) if group2[i]]) if np.any(group2) else 0
+    avg_num_unstable_group3 = np.mean([num_unstable_list[i] for i in range(T) if group3[i]]) if np.any(group3) else 0
+    avg_residency_group1 = np.mean([avg_steps_list[i] for i in range(T) if group1[i]]) if np.any(group1) else 0
+    avg_residency_group2 = np.mean([avg_steps_list[i] for i in range(T) if group2[i]]) if np.any(group2) else 0
+    avg_residency_group3 = np.mean([avg_steps_list[i] for i in range(T) if group3[i]]) if np.any(group3) else 0
+    
+    # Create subplots with four panels in 1x4 layout
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(24, 6))
+
+    # Set up custom colormap with BoundaryNorm
+    cmap = matplotlib.colormaps['inferno']
+    color_map = cmap(np.linspace(0, 1, 15))
+    colors = [
+        color_map[10],
+        color_map[9],
+        np.array([0.6, 0.0, 0.0, 1.0]),
+        np.array([0.5, 0.5, 0.5, 1.0]),
+    ]
+    cmap = mcolors.ListedColormap(colors)
+    norm = mcolors.BoundaryNorm([1, cutoffcol, 2*cutoffcol, 4*cutoffcol+1, np.max(avg_steps)], cmap.N)
+    
+    # First subplot: PCA colored by residency time
+    sc1 = ax1.scatter(h_pca[:, 0], h_pca[:, 1], c=avg_steps, cmap=cmap, norm=norm, s=2, alpha=0.9)
+    ax1.set_xlabel('PC1', fontsize=14)
+    ax1.set_ylabel('PC2', fontsize=14)
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+    
+    # Second subplot: Histogram of sign changes colored by average residency time
+    counts, bin_edges = np.histogram(avg_sign_changes, bins=int(max(avg_sign_changes)))
+    bin_avg_steps = []
+    for i in range(len(bin_edges) - 1):
+        mask = (avg_sign_changes >= bin_edges[i]) & (avg_sign_changes < bin_edges[i+1])
+        bin_avg_steps.append(np.mean(avg_steps[mask]) if np.any(mask) else 0)
+    
+    for i in range(len(counts)):
+        norm_value = norm(bin_avg_steps[i])
+        color = cmap(norm_value)
+        ax2.bar((bin_edges[i] + bin_edges[i+1]) / 2, counts[i], 
+                width=bin_edges[i+1] - bin_edges[i], color=color, alpha=0.9)
+    ax2.set_xlabel('Avg. Sign Changes in Logits Gradient', fontsize=14)
+    ax2.set_ylabel('Frequency', fontsize=14)
+    
+    # Third subplot: Bar plot of average unstable eigenvalues per group, colored by average residency time
+    groups = ['RT < 2\n(Transition)', '2 <= RT <= 8\n(Kick-Zone)', 'RT > 8\n(Cluster)']
+    avg_num_unstable = [avg_num_unstable_group1, avg_num_unstable_group2, avg_num_unstable_group3]
+    avg_residency = [avg_residency_group1, avg_residency_group2, avg_residency_group3]
+    bar_colors = [cmap(norm(avg_residency[i])) for i in range(len(groups))]
+    ax3.bar(groups, avg_num_unstable, color=bar_colors, alpha=0.9)
+    ax3.set_ylabel('Avg. # Eigenvalues Re > 0\n(after Mobius Transform)', fontsize=14)
+    ax3.tick_params(axis='x', labelsize=13) 
+
+    # Set up second custom colormap for range 0-3
+    colors2 = [
+        np.array([0.5, 0.5, 0.5, 1.0]),
+        np.array([0.6, 0.0, 0.0, 1.0]),
+        color_map[10],
+    ]
+    cmap2 = mcolors.ListedColormap(colors2)
+    norm2 = mcolors.BoundaryNorm([0, 1, 2, 3], cmap2.N)
+
+    # Fourth subplot: PCA colored by number of unstable eigenvalues
+    sc2 = ax4.scatter(h_pca[:, 0], h_pca[:, 1], c=num_unstable_list, cmap=cmap2, norm=norm2, s=2, alpha=0.9)
+    ax4.set_xlabel('PC1', fontsize=14)
+    ax4.set_ylabel('PC2', fontsize=14)
+    ax4.set_xticks([])
+    ax4.set_yticks([])
+    
+    # Adjust layout and add colorbars
+    plt.subplots_adjust(bottom=0.25, wspace=0.3)
+    
+    # Colorbar for first subplot, spanning first three subplots
+    cbar1 = fig.colorbar(sc1, ax=[ax1, ax2, ax3], orientation='horizontal', pad=0.15, aspect=60)
+    cbar1.set_ticks([1, cutoffcol, 2*cutoffcol, 4*cutoffcol+1, np.max(avg_steps)])
+    cbar1.ax.set_xticklabels(['1', str(cutoffcol), str(2*cutoffcol), str(4*cutoffcol+1), f'{np.max(avg_steps).astype(int)}'], fontsize=14)
+    cbar1.set_label('Residency Time (RT)', fontsize=14)
+    
+    # Colorbar for fourth subplot
+    cbar2 = fig.colorbar(sc2, ax=ax4, orientation='horizontal', pad=0.15, aspect=20)
+    cbar2.set_label('# Eigenvalues Re > 0', fontsize=14)
+    cbar2.set_ticks([0.5, 1.5, 2.5])
+    cbar2.ax.set_xticklabels(['0', '1', '2'], fontsize=14)
+    
+    #plt.savefig(f'residency_{title}.png', dpi=600, bbox_inches='tight')
+    plt.show()
+
+def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=[83, 59, 44, 28, 72, 114], n_steps=1000, device=None):
+    """
+    Simulate RNN trajectories and plot the activities of specified neurons, given a model path.
+
+    Parameters:
+    - model_path (str): Path to the saved RNN model.
+    - initial_hidden_states (torch.Tensor, optional): Tensor of shape (n_trajectories, hidden_size) for initial states.
+      If None, random initial states are generated with n_trajectories=1.
+    - specified_neurons (list): List of neuron indices to plot. Default is [83, 59, 44, 28, 72, 114].
+    - n_steps (int): Number of steps to simulate. Default is 1000.
+    - device (str or torch.device): Device for computations. If None, uses 'cuda' if available, else 'cpu'.
+
+    Notes:
+    - The function assumes the RNN has input_size=100, hidden_size=150, num_layers=1, output_size=3.
+    - PCA is fitted internally on the simulated hidden states.
+    """
+    # Set device
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Model parameters
+    input_size = 100
+    hidden_size = 150
+    num_layers = 1
+    output_size = 3
+
+    # Load the RNN model
+    rnn = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, output_size=output_size).to(device)
+    rnn.load_state_dict(torch.load(model_path, map_location=device))
+    rnn.eval()
+
+    # Extract weights
+    ih = rnn.rnn.weight_ih_l0.data
+    hh = rnn.rnn.weight_hh_l0.data
+    # fc = rnn.fc.weight.data  # Not used in simulation
+
+    # Handle initial hidden states
+    if initial_hidden_states is None:
+        # Default to 1 trajectory with random initial state if none provided
+        n_trajectories = 1
+        initial_hidden_states = torch.normal(0, 1, size=(n_trajectories, hidden_size), device=device)
+    else:
+        initial_hidden_states = initial_hidden_states.to(device)
+        n_trajectories = initial_hidden_states.shape[0]
+
+    # Initialize tensors for simulation
+    step_norm = torch.zeros((n_trajectories, n_steps, hidden_size), device=device)
+    pre_activations = torch.zeros((n_trajectories, n_steps, len(specified_neurons)), device=device)
+    step_norm[:, 0, :] = initial_hidden_states
+
+    # Simulate the RNN for n_steps
+    with torch.no_grad():
+        for i in range(n_trajectories):
+            for j in range(n_steps - 1):
+                x = torch.normal(0, 1, size=(input_size,), device=device)
+                pre_act = step_norm[i, j, :] @ hh.T + x @ ih.T
+                step_norm[i, j + 1, :] = torch.relu(pre_act)
+                pre_activations[i, j, :] = pre_act[specified_neurons]
+            # Last step pre-activation
+            x = torch.normal(0, 1, size=(input_size,), device=device)
+            pre_activations[i, n_steps - 1, :] = (step_norm[i, n_steps - 1, :] @ hh.T + x @ ih.T)[specified_neurons]
+
+    # Convert to numpy
+    step_norm = step_norm.cpu().numpy()
+    pre_activations = pre_activations.cpu().numpy()
+
+    # Fit and apply PCA
+    pca = PCA(n_components=2)
+    step_norm_flat = step_norm.reshape(-1, hidden_size)
+    pca.fit(step_norm_flat)
+    step_norm_pca = pca.transform(step_norm_flat).reshape(n_trajectories, n_steps, 2)
+
+    # Determine color range
+    global_min = pre_activations.min()
+    global_max = pre_activations.max()
+    cmap = plt.get_cmap('seismic')
+
+    # Create 2x3 subplot grid
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=True)
+
+    # Plot trajectories for each neuron
+    for row in range(2):
+        for col in range(3):
+            ax = axes[row, col]
+            neuron_pos = row * 3 + col
+            for i in range(n_trajectories):
+                points = step_norm_pca[i, :, :]
+                segments = np.array([points[j:j+2] for j in range(n_steps - 1)])
+                colors = pre_activations[i, :-1, neuron_pos]
+                lc = LineCollection(segments, cmap=cmap, alpha=0.5)
+                lc.set_array(colors)
+                ax.add_collection(lc)
+                ax.scatter(points[:, 0], points[:, 1], c=pre_activations[i, :, neuron_pos], 
+                           cmap=cmap, s=10, alpha=0.7)
+            ax.set_xlabel('PC1', fontsize=14)
+            ax.set_ylabel('PC2', fontsize=14)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+    # Add colorbar
+    sm = ScalarMappable(cmap=cmap)
+    sm.set_array(np.linspace(global_min, global_max, 100))
+    cbar = fig.colorbar(sm, ax=axes.ravel().tolist(), label='Pre-Activation Value', 
+                        orientation='vertical', fraction=0.02, pad=0.1)
+    cbar.set_label('Pre-Activation Value', fontsize=14)
+    cbar.ax.tick_params(labelsize=14)
+
+    plt.show()
+
+def relu(x):
+    """ReLU activation function."""
+    return np.maximum(0, x)
+
+def forward(Wr, Wn, h0, u_vec, ret_intermediate=False):
+    if ret_intermediate:
+        # Store intermediate states
+        h_intermediate = [h0.copy()]
+    for u in u_vec:
+        h0 = relu(Wr @ h0 + Wn @ u)
+        if ret_intermediate:
+            h_intermediate.append(h0.copy())
+    if ret_intermediate:
+        return h_intermediate
+    return h0
+
+def mobius_transform(z):
+    """Mobius transformation"""
+    return (z-1)/(z+1)
+
+def jacobian_inj(W_r, h, W_n, n, ret_D=False, c=None, mu=1, cn=None, mun=1):
+    """Compute the Jacobian with injection."""
+    ct = np.ones(W_r.shape[0])
+    if c is not None:
+        ct[c!=0] *= c[c!=0]*mu
+    ctn = np.ones(W_r.shape[0])
+    if cn is not None:
+        ctn[cn!=0] *= cn[cn!=0]*mun
+    D = np.diag(((W_r @ h * ct + (W_n @ n) * ctn) > 0).astype(float))
+    if ret_D:
+        return D @ W_r * ct, D
+    return D @ W_r * ct
+
+def forward_inj(Wr, Wn, h0, u_vec, ret_intermediate=False, c=None, mu=1, cn=None, mun=1):
+    """Forward pass with injection."""
+    ct = np.ones(Wr.shape[0])
+    if c is not None:
+        ct[c!=0] *= c[c!=0]*mu
+    ctn = np.ones(Wr.shape[0])
+    if cn is not None:
+        ctn[cn!=0] *= cn[cn!=0]*mun
+    if ret_intermediate:
+        h_intermediate = [h0.copy()]
+    for u in u_vec:
+        h0 = relu((Wr @ h0)*ct + (Wn @ u)*ctn)
+        if ret_intermediate:
+            h_intermediate.append(h0.copy())
+    if ret_intermediate:
+        return h_intermediate
+    return h0
+
+def kprojected(W_r, id, top_k=10, reversed=True):
+    """Project top-k neurons based on weights."""
+    mask = np.zeros(W_r.shape[0]).astype(bool)
+    idx = W_r[id, :].argsort()
+    if reversed:
+        idx = idx[::-1]
+    mask[idx[:top_k]] = True
+    return mask
+
+def run_injected(W_r, W_n, W_o, tc, h_nominal, noise_nominal, trajs=100, trajlen=100, muvals=[0, 1, 2], c=None, cn=None, T=1000, sigmaj=1, gamm_noise=0.5):
+    """Run simulations with injected interventions."""
+    h0j = (np.random.randn(W_r.shape[0]) * 2 - 1) * 0.1
+    noise_vec_j = np.random.normal(0, sigmaj, [T, W_n.shape[1]])
+    noise_traj = np.random.normal(0, sigmaj, [trajs, trajlen, W_n.shape[1]])
+    spwn = tc - 1
+    
+    mu_data = {}
+    for i, mu in enumerate(muvals):
+        h_istj_mu = [h0j.copy()]
+        hj_mu = h_istj_mu[0]
+        oj_mu = []
+        J_mu_l = []
+        traj_l = []
+        
+        for t in range(T):
+            noisej = noise_vec_j[t]
+            hj_mu = forward_inj(W_r, W_n, hj_mu, [noisej], c=c, mu=mu, cn=cn, mun=mu)
+            h_istj_mu.append(hj_mu)
+            oj_mu.append((W_o @ hj_mu).argmax())
+            Jt_, _ = jacobian_inj(W_r, hj_mu, W_n, noisej, ret_D=True, c=c, mu=mu, cn=cn, mun=mu)
+            J_mu_l.append(Jt_)
+        
+        for j in range(trajs):
+            h0t = h_nominal[spwn].copy()
+            traj_vec = [h0t.copy()]
+            for t in range(trajlen):
+                noisej = noise_nominal[spwn + t] * (1 - gamm_noise) + gamm_noise * noise_traj[j, t]
+                h0t = forward_inj(W_r, W_n, h0t, [noisej], c=c, mu=mu, cn=cn, mun=mu)
+                traj_vec.append(h0t)
+            traj_l.append(np.array(traj_vec))
+        
+        mu_data[mu] = {
+            'h_istj_mu': np.array(h_istj_mu),
+            'oj_mu': np.array(oj_mu),
+            'traj_l': np.array(traj_l),
+            'J_mu_l': J_mu_l
+        }
+    return mu_data
+
+def compute_critical_eigs(mu_data, muvals, dt_transit=15, do_mobius=True, eps_real=0.1, eps_img=0.03):
+    """Compute mean and std of critical complex eigenvalues."""
+    critical_complex_eigs_mean = {}
+    critical_complex_eigs_std = {}
+    for muv in muvals:
+        a = np.where(np.abs(np.diff(mu_data[muv]["oj_mu"]) > 0))[0]
+        if len(a) < 2:
+            a = np.where(np.abs(np.diff(mu_data[1]["oj_mu"]) > 0))[0]
+        comlstats = []
+        for k in range(len(a) - 1):
+            efdttr = dt_transit
+            eigenvalues = []
+            start_idx = max(0, a[k] - efdttr)
+            end_idx = min(len(mu_data[muv]["J_mu_l"]), a[k] + efdttr)
+            for J in mu_data[muv]["J_mu_l"][start_idx:end_idx]:
+                eigvals = np.linalg.eigvals(J)
+                eigenvalues.extend(eigvals)
+            eigenvalues = np.array(eigenvalues)
+            if do_mobius:
+                eigenvalues = (eigenvalues - 1) / (eigenvalues + 1)
+            comlstats.append(np.logical_and(np.abs(eigenvalues.real) < eps_real, eigenvalues.imag > eps_img).sum())
+        critical_complex_eigs_mean[muv] = np.mean(comlstats) if comlstats else 0
+        critical_complex_eigs_std[muv] = np.std(comlstats) if comlstats else 0
+    return critical_complex_eigs_mean, critical_complex_eigs_std
+
+
+def load_weights(path):
+    """Load weights from a file."""
+    weights = torch.load(path, map_location=torch.device('cpu'), weights_only=True)
+    W_r = weights["rnn.weight_hh_l0"].cpu().numpy() 
+    W_n = weights["rnn.weight_ih_l0"].cpu().numpy()
+    W_o = weights["fc.weight"].cpu().numpy()
+    return W_r, W_n, W_o
+
+def find_transition(W_r, W_n, W_o, sigma=1, back=25, skipped_trasit=4, t0=20, tf=5, trials=20, dT=20, Tmin=200, T=2000, tau=0.5):
+    hj = (np.random.randn(W_r.shape[0])*2-1)*0.1
+    for t in range(t0):
+        noisej = np.random.normal(0, sigma, W_n.shape[1])  # noise
+        hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
+    
+    skips = 0
+    ocurr = (W_o @ hj).argmax()
+    h_track = [hj.copy()]
+    o_track = [ocurr.copy()]
+    noise_vec = np.random.normal(0, sigma, [T, W_n.shape[1]])
+    pskip=0
+    for t in range(T):
+        noisej = noise_vec[t] # noise
+        hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
+        h_track.append(hj)
+        oj = (W_o @ hj).argmax()  # Output
+        o_track.append(oj.copy())
+    
+    noise_vec = np.concatenate([np.zeros([1, W_n.shape[1]]), noise_vec], axis=0)
+    h_track = np.array(h_track)
+    o_track = np.array(o_track)
+
+    skip = skipped_trasit
+    it = max(np.diff(np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1]).argmax()-1, 0)
+
+    tt = np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1][it+1] + Tmin
+    tc = int(np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1][it+1]*tau + np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1][it]*(1-tau)) + Tmin
+    tc = max(tc, tt-back)
+
+    firing_t = []
+    firing_trials_rate = []
+    h_track2 = []
+    o_track2 = []
+    for i in range((tt-tc)+tf+1):
+        trial_data = []
+        fired = 0
+        for j in range(trials):
+            ocurr = o_track[tf+tt-i].copy()
+            hj = h_track[tf+tt-i].copy()
+            for t in range(dT):
+                noisej = np.random.normal(0, sigma, W_n.shape[1])
+                hj = forward(W_r, W_n, hj, [noisej])
+                oj = (W_o @ hj).argmax()
+                if ocurr != oj:
+                    fired += 1
+                    break
+            trial_data.append(t+1)
+        firing_t.append(np.mean(trial_data))  
+        firing_trials_rate.append(fired/trials)
+
+    firing_t = np.array(firing_t)
+    firing_trials_rate = np.array(firing_trials_rate)
+
+    return firing_t, firing_trials_rate, h_track, o_track, noise_vec, tt, tc
+
+def locate_areas(W_r, W_n, W_o, visual_check=False, T=2000, thr_fr=6, verbose=False, max_retries=5):
+    """Locate transition and cluster points with robust handling of edge cases and retry mechanism."""
+    sigma = 1
+    t0 = 20
+    tau = 0.1
+    back = 20
+    tf = 5
+    trials = 100
+    skip = 4
+    Tmin = 200
+    dT = max(thr_fr, 25)
+
+    for attempt in range(max_retries):
+        # Initialize state
+        hj = (np.random.randn(W_r.shape[0]) * 2 - 1) * 0.1
+        for t in range(t0):
+            noisej = np.random.normal(0, sigma, W_n.shape[1])
+            hj = forward_inj(W_r, W_n, hj, [noisej])
+
+        # Run simulation
+        h_track = [hj.copy()]
+        o_track = [(W_o @ hj).argmax()]
+        noise_vec = np.random.normal(0, sigma, [T, W_n.shape[1]])
+        for t in range(T):
+            noisej = noise_vec[t]
+            hj = forward_inj(W_r, W_n, hj, [noisej])
+            h_track.append(hj)
+            o_track.append((W_o @ hj).argmax())
+
+        noise_vec = np.concatenate([np.zeros([1, W_n.shape[1]]), noise_vec], axis=0)
+        h_track = np.array(h_track)
+        o_track = np.array(o_track)
+
+        # Find transition point (tt)
+        diff_indices = np.where(np.diff(o_track[Tmin:]) != 0)[0]
+        if len(diff_indices[skip:-1]) <= 0:
+            if verbose:
+                print(f"Attempt {attempt + 1}/{max_retries}: No valid transitions found after Tmin. Setting it = 0, tt = Tmin.")
+            it = 0
+            tt = Tmin
+        else:
+            it = max(np.diff(diff_indices[skip:-1]).argmax() - 1, 0)
+            tt = diff_indices[skip:-1][it + 1] + Tmin
+
+        # Estimate cluster point (tc)
+        if len(diff_indices[skip:-1]) <= it + 1:
+            if verbose:
+                print(f"Attempt {attempt + 1}/{max_retries}: Insufficient transitions for tc. Setting tc = tt - back.")
+            tc = tt - back
+        else:
+            tc = max(int(diff_indices[skip:-1][it + 1] * tau + 
+                        diff_indices[skip:-1][it] * (1 - tau)) + Tmin, tt - back)
+
+        # Compute firing times and rates
+        firing_t = []
+        firing_trials_rate = []
+        for i in range((tt - tc) + tf + 1):
+            trial_data = []
+            fired = 0
+            for j in range(trials):
+                hj = h_track[tf + tt - i].copy()
+                ocurr = o_track[tf + tt - i]
+                for t in range(dT):
+                    noisej = np.random.normal(0, sigma, W_n.shape[1])
+                    hj = forward_inj(W_r, W_n, hj, [noisej])
+                    oj = (W_o @ hj).argmax()
+                    if ocurr != oj:
+                        fired += 1
+                        break
+                trial_data.append(t + 1)
+            firing_t.append(np.mean(trial_data))
+            firing_trials_rate.append(fired / trials)
+
+        firing_t = np.array(firing_t)
+        firing_trials_rate = np.array(firing_trials_rate)
+
+        # Compute kick point (tk)
+        condition_indices = np.where((firing_t < 3) & (firing_trials_rate == 1))[0]
+        if len(condition_indices) > 0:
+            tk = tt - (condition_indices[-1] - tf)
+        else:
+            tk = tt
+            if verbose:
+                print(f"Attempt {attempt + 1}/{max_retries}: No points satisfy (firing_t < 3) & (firing_trials_rate == 1). Setting tk = tt.")
+
+        # Check cluster mask
+        cluster_mask = (firing_t >= thr_fr) & (firing_trials_rate < 1) & (np.arange(len(firing_t)) > tf)
+        if np.sum(cluster_mask) > 0:
+            tc = tt - (np.where(cluster_mask)[0][0] - tf)
+            if verbose:
+                print(f"Attempt {attempt + 1}/{max_retries}: Valid cluster_mask found. Exiting retry loop.")
+            break
+        if verbose:
+            print(f"[...] REITERATING (Attempt {attempt + 1}/{max_retries})")
+    else:
+        tc = max(tc, tt - back)
+        if verbose:
+            print(f"Warning: Max retries ({max_retries}) reached. Retaining tc = max(tc, tt - back).")
+
+    return h_track, o_track, noise_vec, tt, tk, tc
+
+
+def noise_sensitivity(title, W_r, W_n, o_track, h_track, noise_vec, tk, tc, gamm_noise_vals=[0,0.5,1], T=6, trajs=100, beta_fac=0):
+    sigmaj = 1
+    
+    noise_vec = np.concatenate([noise_vec, np.random.normal(0, sigmaj, [T, noise_vec.shape[1]])], axis=0)  # noise
+    beta_fac = 0 #0.1
+
+    idx_vals = [tk, tc] 
+    gamm_noise_vals = gamm_noise_vals
+    pca_hj = PCA(n_components=2)
+    pca_hj.fit(h_track)
+    h_track_pca = pca_hj.transform(h_track)
+
+    trans_trajs = {}
+    trans_trajs_pca = {}
+    for idx in idx_vals:
+        gamm_jacobs = {}
+        gamm_trajs = {}
+        gamm_trajs_pca = {}
+        h0_ch = h_track[idx].copy()
+        for gamm_noise in gamm_noise_vals:
+            ch_trajs = []
+            for _ in range(trajs):
+                hj = h0_ch.copy() + np.random.normal(0, beta_fac, h0_ch.shape[0])  # Random initial hidden state
+                traj_k = [hj.copy()]
+                for t in range(T):
+                    noisej = noise_vec[idx+t]*(1-gamm_noise) + gamm_noise*np.random.normal(0, sigmaj, noise_vec.shape[1]) #* (np.random.rand()*1.5 if t==0 else 1)  #+ np.random.normal(0, 0.001, W_n.shape[1]).flatten() if t==0 else np.zeros_like(noise_vec[t])  # noise
+                    hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
+                    traj_k.append(hj)
+
+                ch_trajs.append(np.array(traj_k))
+            ch_trajs = np.array(ch_trajs)
+
+            ch_trajs_pca = pca_hj.transform(ch_trajs.reshape(-1, h0_ch.shape[0])).reshape(trajs, T+1, 2)
+            gamm_trajs[gamm_noise] = ch_trajs
+            gamm_trajs_pca[gamm_noise] = ch_trajs_pca
+        trans_trajs[idx] = gamm_trajs
+        trans_trajs_pca[idx] = gamm_trajs_pca
+
+    #### PLOT 1
+
+    # Define custom colormap for o_track (0: dark green, 2: dark red)
+    colors = {0: 'dimgrey', 1:"royalblue", 2: 'darkgrey'}
+    cmap = mcolors.ListedColormap([colors[0], colors[2]])
+    max_trajs = 30 # trajs
+    start = 1
+
+    rows = 1  # One row for all subplots
+    columns = len(gamm_noise_vals) * len(idx_vals)  # One column per gamma value per index
+    fig, axs = plt.subplots(rows, columns, figsize=(24, 4))  # 1x6 subplot grid
+
+    for i, idj in enumerate(idx_vals):
+        for j, gni in enumerate(gamm_noise_vals):
+            col_idx = i * len(gamm_noise_vals) + j
+            # Set title based on cluster or transition
+            title2 = f"Cluster ($\gamma=${gni})" if idj == idx_vals[0] else f"Transition ($\gamma=${gni})"
+            axs[col_idx].set_title(title2, fontsize=16)
+            axs[col_idx].scatter(h_track_pca[:, 0], h_track_pca[:, 1], c=o_track, cmap=cmap, alpha=0.3)
+            for k in range(max_trajs):
+                axs[col_idx].plot(trans_trajs_pca[idj][gni][k, ..., 0], trans_trajs_pca[idj][gni][k, ..., 1], color="darkblue", alpha=0.6)
+            axs[col_idx].scatter(trans_trajs_pca[idj][gni][:,0,0], trans_trajs_pca[idj][gni][:,0,1], c='black', alpha=1, marker="*", s=100)
+            if col_idx == 0:
+                axs[col_idx].set_ylabel("PC2", fontsize=16)
+            axs[col_idx].set_xlabel("PC1", fontsize=16)
+            axs[col_idx].set_xticks([])
+            axs[col_idx].set_yticks([])
+
+    plt.suptitle(title, fontsize=16)
+    plt.tight_layout()
+
+    #### PLOT 2
+    start = 0
+    n, T, D = trans_trajs[idj][gni].shape
+    X = trans_trajs[idj][gni][:, start:, :]
+    plt.figure(figsize=(8, 5))
+    plt.suptitle(title, fontsize=14)
+    noise_sensitivity_dt = {}
+    # Compute spread metrics over time
+    for idj in idx_vals:
+        final_cov_trace = []
+        final_mean_distance = []
+        for gk, gni in enumerate(gamm_noise_vals):
+            if gni == 0: continue
+            traces = []
+            mean_distances = []
+            hull_areas = []
+            for t in range(T):
+                X_t = trans_trajs[idj][gni][:, t, :]
+                mean_X = np.mean(X_t, axis=0)
+                centered_X = X_t - mean_X
+                # Trace of covariance
+                trace = np.sum((centered_X ** 2) / (n - 1))
+                traces.append(trace)
+                # Mean distance to mean
+                distances = np.sqrt(np.sum(centered_X ** 2, axis=1))
+                mean_distances.append(np.mean(distances))
+                
+            # Determine label and color based on whether idj is cluster or transition
+            # and use different shades based on gamma value
+            if idj == idx_vals[0]:  # Cluster
+                label = f"Cluster (γ={gni})"
+                # Use different shades of blue based on gamma index
+                if gk == 0 or (gk == 1 and gamm_noise_vals[0] == 0):
+                    color = "royalblue"  # Lighter blue for first non-zero gamma
+                else:
+                    color = "darkblue"   # Darker blue for second gamma
+            else:  # Transition
+                label = f"Transition (γ={gni})"
+                # Use different shades of red based on gamma index
+                if gk == 0 or (gk == 1 and gamm_noise_vals[0] == 0):
+                    color = "indianred"  # Lighter red for first non-zero gamma
+                else:
+                    color = "darkred"    # Darker red for second gamma
+                
+            # Plot metrics with specific colors
+            plt.subplot(1, 2, 1)
+            plt.plot(traces, label=label, color=color)
+            plt.title("Trace of Covariance", fontsize=14)
+            plt.xlabel("Time", fontsize=14)
+            plt.ylabel("Trace", fontsize=14)
+            
+            plt.subplot(1, 2, 2)
+            plt.plot(mean_distances, label=label, color=color)
+            plt.title("Avg. Distance to Mean Trajectory", fontsize=14)
+            plt.xlabel("Time", fontsize=14)
+            plt.ylabel("Mean Distance", fontsize=14)
+            
+            plt.tight_layout()
+            final_cov_trace.append(np.mean(traces[-5:]))
+            final_mean_distance.append(np.mean(mean_distances[-5:]))
+            
+        noise_sensitivity_dt[idj] = {
+            "final_cov_trace": final_cov_trace,
+            "final_mean_distance": final_mean_distance
+        }
+
+    plt.legend(fontsize=10)
+    plt.show()
+
+def weight_matrices(W_r):
+    """
+    Plot weight matrices for kick neurons and integrating populations.
+    
+    Parameters:
+    W_r : numpy.ndarray
+        Weight matrix to be visualized
+    """
+    # Create figure with three subplots
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
+    
+    # Define neuron indices for kick groups
+    vec = np.array([83, 59, 44, 28, 72, 114])
+    
+    # Plot 1: Kick Neurons ⇄ Kick Neurons
+    axs[0].imshow(W_r[vec,:][:, vec], cmap='bwr', aspect='auto')
+    axs[0].set_xticks(ticks=[1, 4], labels=["Kick group 1", "Kick group 2"], fontsize=14)
+    axs[0].set_yticks(ticks=[1, 4], labels=["Kick group 1", "Kick group 2"], rotation=90, fontsize=14)
+    axs[0].set_title("$W_{hh}$ weights: Kick Neurons ⇄ Kick Neurons", fontsize=13)
+    
+    # Calculate top-k integrating neurons
+    topk = 70
+    g1 = W_r[[83, 59, 44], :].mean(axis=0)
+    g2 = W_r[[28, 72, 114], :].mean(axis=0)
+    sortmap = np.argsort(g1 * g2)
+    
+    g1 = g1[sortmap][:topk]
+    g2 = g2[sortmap][:topk]
+    sortmap2 = np.argsort(g1)
+    g12 = g1[sortmap2]
+    g22 = g2[sortmap2]
+    final_map = sortmap[sortmap2[sortmap2 < topk]]
+    
+    # Plot 2: Kick Neurons ⇄ Integrating Populations
+    s1 = axs[1].imshow(W_r[vec, :][:, final_map], cmap='bwr', aspect='auto')
+    axs[1].set_xticks(ticks=[int(topk * 0.25), int(topk * 0.75)], 
+                     labels=["Integrating\npopulation 1", "Integrating\npopulation 2"], fontsize=14)
+    axs[1].set_yticks(ticks=[1, 4], labels=["Kick group 1", "Kick group 2"], rotation=90, fontsize=14)
+    axs[1].set_title("$W_{hh}$ weights: Kick Neurons ⇄ Integrating Populations", fontsize=13)
+    
+    # Plot 3: Integrating Populations ⇄ Integrating Populations
+    axs[2].imshow(W_r[final_map, :][:, final_map], cmap='bwr', aspect='auto')
+    axs[2].set_xticks(ticks=[int(topk * 0.25), int(topk * 0.75)], 
+                     labels=["Integrating\npopulation 1", "Integrating\npopulation 2"], fontsize=14)
+    axs[2].set_yticks(ticks=[int(topk * 0.25), int(topk * 0.75)], 
+                     labels=["Integrating\npopulation 1", "Integrating\npopulation 2"], rotation=90, fontsize=14)
+    axs[2].set_title("$W_{hh}$ weights: Integrating Pop. ⇄ Integrating Pop.", fontsize=13)
+    
+    # Add horizontal colorbar below all plots
+    cbar = fig.colorbar(s1, ax=axs, orientation='horizontal', fraction=0.15, pad=0.05)
+    cbar.set_label("Weight value")
+    plt.show()
+
+def mean_activities(model_path, T=300, kick_group1=[83,59,44], kick_group2=[28,72,114], topk=70, sigmaj=1, TMaxx=200):
+    """
+    Plot the mean activities of kick neurons and integrating populations over time.
+
+    Parameters:
+    - model_path (str): Path to the saved RNN model.
+    - T (int): Number of time steps to simulate. Default is 300.
+    - kick_group1 (list): Indices of neurons used to compute g1 for selecting integrating populations.
+      Note: In the plot, these are labeled as "Kick Group 2". Default is [83,59,44].
+    - kick_group2 (list): Indices of neurons used to compute g2 for selecting integrating populations.
+      Note: In the plot, these are labeled as "Kick Group 1". Default is [28,72,114].
+    - topk (int): Number of top neurons to select for integrating populations. Default is 70.
+    - sigmaj (float): Standard deviation of the noise. Default is 1.
+    - TMaxx (int): Maximum time steps to plot. Default is 200.
+    """
+    # Load weights
+    W_r, W_n, W_o = load_weights(model_path)
+
+    # Set up matplotlib
+    cmap = matplotlib.colormaps['inferno']
+    color_map = cmap(np.linspace(0, 1, 15))
+    colors = [
+        color_map[10],
+        color_map[9],
+        color_map[7],
+        color_map[1]
+    ]
+    cmap = mcolors.ListedColormap(colors)
+    font = {'size': 16}
+    matplotlib.rc('font', **font)
+
+    # Compute integrating populations
+    g1 = W_r[kick_group1, :].mean(axis=0)
+    g2 = W_r[kick_group2, :].mean(axis=0)
+    sortmap = np.argsort(g1 * g2)
+    g1_top = g1[sortmap][:topk]
+    g2_top = g2[sortmap][:topk]
+    sortmap2 = np.argsort(g1_top)
+    final_map = sortmap[sortmap2[sortmap2 < topk]]
+
+    # Simulate RNN
+    noise_vec_j = np.random.normal(0, sigmaj, [T, W_n.shape[1]])
+    h0j = (np.random.randn(W_r.shape[0]) * 2 - 1) * 0.1
+    h_track = []
+    o_track = []
+    for t in range(T):
+        h0j = forward_inj(W_r, W_n, h0j, [noise_vec_j[t]])
+        h_track.append(h0j.copy())
+        o = W_o @ h0j
+        o_track.append(o.argmax())
+    h_track = np.array(h_track)
+    o_track = np.array(o_track)
+
+    # Filter h_track for integrating populations
+    filtered = h_track[:, final_map]
+
+    # Define masks for kick groups
+    map_k1 = np.zeros(h_track.shape[1], dtype=bool)
+    map_k1[kick_group2] = True  # Neurons labeled "Kick Group 1" in plot
+    map_k2 = np.zeros(h_track.shape[1], dtype=bool)
+    map_k2[kick_group1] = True  # Neurons labeled "Kick Group 2" in plot
+
+    # Plot
+    plt.figure(figsize=(20, 3))
+    plt.plot(h_track[:TMaxx, map_k1].mean(axis=-1), label="Kick Group 1", c="navy")
+    plt.plot(h_track[:TMaxx, map_k2].mean(axis=-1), label="Kick Group 2", c="darkred")
+    half = filtered.shape[1] // 2
+    plt.plot(filtered[:TMaxx, :half].mean(axis=-1), label="Integrating Pop 1", alpha=1, linestyle='--', c="blue")
+    plt.plot(filtered[:TMaxx, half:].mean(axis=-1), label="Integrating Pop 2", alpha=1, linestyle='--', c="red")
+    plt.legend(loc='upper right', fontsize=12)
+
+    barss = np.where(np.diff(o_track[:TMaxx]) != 0)[0]
+    alpha_l = 0.4
+    mx = np.max([h_track[:TMaxx, map_k1].mean(axis=-1), h_track[:TMaxx, map_k2].mean(axis=-1)]) + 0.3
+
+    if len(barss) > 0:
+        for i, b in enumerate(barss):
+            if i == 0:
+                plt.fill_betweenx([0, mx], 0, b + 1, color='lightgray', alpha=alpha_l)
+            else:
+                color = 'lightgray' if i % 2 == 0 else 'darkgray'
+                plt.fill_betweenx([0, mx], barss[i - 1] + 1, b + 1, color=color, alpha=alpha_l)
+        last_bar = barss[-1] + 1
+        last_color = 'lightgray' if len(barss) % 2 == 1 else 'darkgray'
+    else:
+        last_bar = 0
+        last_color = 'lightgray'
+
+    plt.fill_betweenx([0, mx], last_bar, min(TMaxx, h_track.shape[0]), color=last_color, alpha=alpha_l)
+    plt.xlabel("Time", fontsize=16)
+    plt.ylabel("Mean activity", fontsize=16)
+    plt.title("Mean activity of Kick Neurons and Noise Integrating Populations", fontsize=20)
+    plt.show()
+
+def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_eps=0.1, maxp=700, trlen=700, clip_value=15, purple_epoch=None):
+    """
+    Generate a 3D PCA plot showing state space evolution for specified epochs.
+    
+    Parameters:
+    - folder_path: str, path to folder containing model_epoch_*.pth files
+    - selected_epochs_list: list of int, specific epochs to plot
+    - T: int, number of simulation time steps
+    - t0: int, number of warmup time steps
+    - sigmaj: float, noise standard deviation
+    - h_eps: float, initial hidden state perturbation scale
+    - maxp: int, maximum points to plot per epoch
+    - trlen: int, length of trajectory to plot
+    - clip_value: float, value to clip PCA coordinates
+    - purple_epoch: int or None, epoch to plot in purple (default: None)
+    
+    Returns:
+    - Displays a 3D matplotlib plot
+    """
+    # Get and sort model files
+    model_files = sorted(
+        [f for f in os.listdir(folder_path) if f.startswith('model_epoch_') and f.endswith('.pth')],
+        key=lambda x: int(x.split('_')[-1].split('.')[0])
+    )
+    
+    all_epochs = [int(fname.split('_')[-1].split('.')[0]) for fname in model_files]
+    epochs_to_plot = selected_epochs_list
+    
+    # Add purple_epoch if specified and not already included
+    if purple_epoch is not None and purple_epoch not in epochs_to_plot and purple_epoch in all_epochs:
+        epochs_to_plot = epochs_to_plot + [purple_epoch]
+    
+    # Find indices for epochs_to_plot
+    selected_indices = []
+    selected_epochs = []
+    for epoch in epochs_to_plot:
+        if epoch in all_epochs:
+            idx = all_epochs.index(epoch)
+            selected_indices.append(idx)
+            selected_epochs.append(epoch)
+        else:
+            print(f"Warning: Epoch {epoch} not found in model files.")
+    
+    # Sort by epoch number
+    if selected_epochs:
+        sorted_pairs = sorted(zip(selected_indices, selected_epochs), key=lambda x: x[1])
+        selected_indices, selected_epochs = zip(*sorted_pairs)
+        selected_indices = list(selected_indices)
+        selected_epochs = list(selected_epochs)
+    else:
+        print("No epochs to plot.")
+        return
+    
+    # Load first model to determine dimensions
+    W_r, W_n, W_o = load_weights(os.path.join(folder_path, model_files[0]))
+    hidden_size = W_r.shape[0]
+    input_size = W_n.shape[1]
+    
+    # Initialize noise and initial hidden state
+    noise_warmup = np.random.normal(0, sigmaj, [t0, input_size])
+    noise_vec_j = np.random.normal(0, sigmaj, [T, input_size])
+    h0j = (np.random.randn(hidden_size) * 2 - 1) * h_eps
+    
+    # Lists to store PCA points and outputs
+    pca_points_2d = []
+    out_t = []
+    
+    # Process each selected epoch
+    for idx in selected_indices:
+        model_file = os.path.join(folder_path, model_files[idx])
+        W_r, W_n, W_o = load_weights(model_file)
+        
+        # Warmup phase
+        h_current = h0j.copy()
+        for t in range(t0):
+            noise = noise_warmup[t]
+            h_current = forward(W_r, W_n, h_current, [noise])
+        
+        # Simulation phase
+        hj_mu = [h_current]
+        for t in range(T):
+            noise = noise_vec_j[t]
+            h_current = forward(W_r, W_n, h_current, [noise])
+            hj_mu.append(h_current)
+        hj_mu = np.array(hj_mu)
+        
+        # Compute outputs from logits
+        logits = np.einsum("ij, tj -> ti", W_o, hj_mu)
+        out = np.argmax(logits, axis=1)
+        
+        # Apply PCA
+        pca = PCA(n_components=2)
+        pca.fit(hj_mu)
+        hj_mu_pca = pca.transform(hj_mu)
+        hj_mu_pca = np.clip(hj_mu_pca, -clip_value, clip_value)
+        
+        pca_points_2d.append(hj_mu_pca)
+        out_t.append(out)
+    
+    # Create 3D plot
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.view_init(elev=14, azim=80, roll=0)
+    
+    # Define fixed colors
+    color_red = 'darkred'
+    color_green = 'darkgreen'
+    
+    # Plot points and trajectories for each epoch
+    for t, (cloud, out) in enumerate(zip(pca_points_2d, out_t)):
+        n_points = min(maxp, cloud.shape[0])
+        x = cloud[:n_points, 0]
+        y = cloud[:n_points, 1]
+        z = np.full(n_points, t)
+        
+        # Check if this is the purple epoch
+        is_purple = selected_epochs[t] == purple_epoch if purple_epoch is not None else False
+        
+        # Color for scatter points
+        scatter_color_red = 'purple' if is_purple else color_red
+        scatter_color_green = 'purple' if is_purple else color_green
+        
+        # Plot scatter points
+        mask = out[:n_points] == 2
+        ax.scatter(x[mask], y[mask], z[mask], c=[scatter_color_red], s=10, alpha=0.3)
+        ax.scatter(x[~mask], y[~mask], z[~mask], c=[scatter_color_green], s=10, alpha=0.3)
+        
+        # Plot trajectory
+        if is_purple:
+            # Plot entire trajectory in purple
+            ax.plot(x[:trlen], y[:trlen], z[:trlen], color='purple', alpha=0.3)
+        else:
+            # Plot each segment based on the class of the starting point
+            for i in range(trlen - 1):
+                segment_color = color_red if out[i] == 2 else color_green
+                ax.plot(x[i:i+2], y[i:i+2], [t, t], color=segment_color, alpha=0.3)
+    
+    # Set labels and ticks
+    ax.set_zlabel('Epoch Index')
+    ax.set_zticks(range(len(selected_epochs)))
+    ax.set_zticklabels(selected_epochs)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.title('PCA of Latent Dynamics Across Epochs')
+    plt.show()
+
+def ablation(weights_path, ablated_neurons=[83, 59, 44], verbose=False):
+    # other kick neurons triplet: [28, 72, 114]
+    """Generate the final 2x3 plot from weights file."""
+    # Load weights
+    W_r, W_n, W_o = load_weights(weights_path)
+    
+    # Locate areas
+    h_nom, o_track, noise_vec_nom, tt, tk, tc = locate_areas(W_r, W_n, W_o, visual_check=False, verbose=verbose)
+    
+    # Parameters
+    T = 1000
+    muvals = np.arange(0, 2.1, 0.1).tolist()
+    trajs = 5
+    trajlen = 100
+    sigmaj = 1
+    gamm_noise = 0.5
+    
+    # Define intervention masks
+    # Kick neurons
+    c_kick = np.zeros(W_r.shape[0])
+    c_kick[ablated_neurons] = 1
+    cn_kick = np.zeros(W_r.shape[0])
+    
+    # Noise projection
+    c_noise = np.zeros(W_r.shape[0])
+    cn_noise = np.zeros(W_r.shape[0])
+    mask = kprojected(W_r, ablated_neurons[0], top_k=65, reversed=True)
+    mask2 = kprojected(W_r, ablated_neurons[1], top_k=65, reversed=True)
+    mask3 = kprojected(W_r, ablated_neurons[2], top_k=65, reversed=True)
+    mask = (mask | mask2) | mask3
+    cn_noise[np.where(mask)] = 1
+    cn_noise[[28, 72, 114, 59, 83, 44]] = 0
+    
+    # Control
+    c_cnt = np.zeros(W_r.shape[0])
+    cn_cnt = np.zeros(W_r.shape[0])
+    top_k = 35
+    mask = np.any(np.stack([
+        kprojected(W_r, 83, top_k=top_k, reversed=True),
+        kprojected(W_r, 59, top_k=top_k, reversed=True),
+        kprojected(W_r, 44, top_k=top_k, reversed=True),
+        kprojected(W_r, 28, top_k=top_k, reversed=True),
+        kprojected(W_r, 72, top_k=top_k, reversed=True),
+        kprojected(W_r, 114, top_k=top_k, reversed=True)
+    ]), axis=0).flatten()
+    mask = ~mask
+    cn_cnt[np.where(mask)] = 1
+    cn_cnt[[28, 72, 114, 59, 83, 44]] = 0
+    
+    # Run simulations
+    mu_data_kick = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_kick, cn_kick, T, sigmaj, gamm_noise)
+    mu_data_noise = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_noise, cn_noise, T, sigmaj, gamm_noise)
+    mu_data_cnt = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_cnt, cn_cnt, T, sigmaj, gamm_noise)
+    
+    # Compute PCA
+    pca_hj = PCA(n_components=2)
+    pca_hj.fit(h_nom)
+    for mu in muvals:
+        for mu_data in [mu_data_kick, mu_data_noise, mu_data_cnt]:
+            mu_data[mu]["h_istj_pca"] = pca_hj.transform(mu_data[mu]["h_istj_mu"])
+            mu_data[mu]["traj_l_pca"] = pca_hj.transform(mu_data[mu]["traj_l"].reshape(-1, W_r.shape[0])).reshape(trajs, trajlen + 1, 2)
+    
+    # Compute critical eigenvalues
+    critical_complex_eigs_mean_kick, critical_complex_eigs_std_kick = compute_critical_eigs(mu_data_kick, muvals)
+    critical_complex_eigs_mean_noise, critical_complex_eigs_std_noise = compute_critical_eigs(mu_data_noise, muvals)
+    critical_complex_eigs_mean_cnt, critical_complex_eigs_std_cnt = compute_critical_eigs(mu_data_cnt, muvals)
+    
+    # Plotting setup
+    plt.rcParams['font.size'] = 16
+    colors = {0: 'darkgreen', 1: "royalblue", 2: 'darkred'}
+    cmap = mcolors.ListedColormap([colors[0], colors[2]])
+    max_trajs = 3
+    mu0 = 0
+    muf = muvals[-2]  # 1.9
+    a_inhi = 0.7
+    a_exci = 0.7
+    a_nomi = 0.7
+    a_hopf = 0.3
+    
+    fig, axs = plt.subplots(2, 3, figsize=(18, 12))
+    
+    # Kick neurons
+    axs[0, 0].set_title("Kick neurons")
+    for k in range(min(max_trajs, len(mu_data_kick[mu0]["traj_l_pca"]))):
+        axs[0, 0].plot(mu_data_kick[1]["traj_l_pca"][k][:100, 0], mu_data_kick[1]["traj_l_pca"][k][:100, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
+        axs[0, 0].plot(mu_data_kick[mu0]["traj_l_pca"][k][:100, 0], mu_data_kick[mu0]["traj_l_pca"][k][:100, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
+        axs[0, 0].plot(mu_data_kick[muf]["traj_l_pca"][k][:100, 0], mu_data_kick[muf]["traj_l_pca"][k][:100, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
+    axs[0, 0].scatter(mu_data_kick[mu0]["traj_l_pca"][0][0, 0], mu_data_kick[mu0]["traj_l_pca"][0][0, 1], c='black', alpha=1, marker="*", s=100)
+    axs[0, 0].set_xlabel("PC1")
+    axs[0, 0].set_ylabel("PC2")
+    axs[0, 0].set_xticks([])
+    axs[0, 0].set_yticks([])
+    
+    axs[1, 0].scatter(muvals[:-2], list(critical_complex_eigs_mean_kick.values())[:-2], color='darkgray', alpha=0.5)
+    axs[1, 0].plot(muvals[:-2], list(critical_complex_eigs_mean_kick.values())[:-2], color='darkgray', alpha=0.2, linestyle='--')
+    axs[1, 0].errorbar(muvals[:-2], list(critical_complex_eigs_mean_kick.values())[:-2], yerr=list(critical_complex_eigs_std_kick.values())[:-2], fmt='o', color='darkgray', alpha=a_hopf)
+    axs[1, 0].errorbar(muf, critical_complex_eigs_mean_kick[muf], yerr=critical_complex_eigs_std_kick[muf], fmt='o', color='darkred', alpha=0.8)
+    axs[1, 0].errorbar(mu0, critical_complex_eigs_mean_kick[mu0], yerr=critical_complex_eigs_std_kick[mu0], fmt='o', color='darkblue', alpha=a_inhi)
+    axs[1, 0].errorbar(1, critical_complex_eigs_mean_kick[1], yerr=critical_complex_eigs_std_kick[1], fmt='o', color='black', alpha=0.45)
+    axs[1, 0].set_xticks([0, 0.5, 1, 1.5, 2])
+    axs[1, 0].tick_params("x", rotation=45)
+    axs[1, 0].set_xlabel("$\mu$")
+    axs[1, 0].set_ylabel("# Critical pairs")
+    
+    # Noise projection
+    axs[0, 1].set_title("Noise projection")
+    for k in range(min(max_trajs, len(mu_data_noise[mu0]["traj_l_pca"]))):
+        axs[0, 1].plot(mu_data_kick[1]["traj_l_pca"][k][:100, 0], mu_data_kick[1]["traj_l_pca"][k][:100, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
+        axs[0, 1].plot(mu_data_noise[mu0]["traj_l_pca"][k][:100, 0], mu_data_noise[mu0]["traj_l_pca"][k][:100, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
+        axs[0, 1].plot(mu_data_noise[muf]["traj_l_pca"][k][:100, 0], mu_data_noise[muf]["traj_l_pca"][k][:100, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
+    axs[0, 1].scatter(mu_data_noise[mu0]["traj_l_pca"][0][0, 0], mu_data_noise[mu0]["traj_l_pca"][0][0, 1], c='black', alpha=1, marker="*", s=100)
+    axs[0, 1].set_xlabel("PC1")
+    axs[0, 1].set_xticks([])
+    axs[0, 1].set_yticks([])
+    
+    axs[1, 1].scatter(muvals[:-2], list(critical_complex_eigs_mean_noise.values())[:-2], color='darkgray', alpha=0.5)
+    axs[1, 1].plot(muvals[:-2], list(critical_complex_eigs_mean_noise.values())[:-2], color='darkgray', alpha=0.2, linestyle='--')
+    axs[1, 1].errorbar(muvals[:-2], list(critical_complex_eigs_mean_noise.values())[:-2], yerr=list(critical_complex_eigs_std_noise.values())[:-2], fmt='o', color='darkgray', alpha=a_hopf)
+    axs[1, 1].errorbar(muf, critical_complex_eigs_mean_noise[muf], yerr=critical_complex_eigs_std_noise[muf], fmt='o', color='darkred', alpha=0.8)
+    axs[1, 1].errorbar(mu0, critical_complex_eigs_mean_noise[mu0], yerr=critical_complex_eigs_std_noise[mu0], fmt='o', color='darkblue', alpha=a_inhi)
+    axs[1, 1].errorbar(1, critical_complex_eigs_mean_noise[1], yerr=critical_complex_eigs_std_noise[1], fmt='o', color='black', alpha=0.45)
+    axs[1, 1].set_xticks([0, 0.5, 1, 1.5, 2])
+    axs[1, 1].tick_params("x", rotation=45)
+    axs[1, 1].set_xlabel("$\mu$")
+    
+    # Control
+    axs[0, 2].set_title("Control")
+    for k in range(min(max_trajs, len(mu_data_cnt[mu0]["traj_l_pca"]))):
+        axs[0, 2].plot(mu_data_kick[1]["traj_l_pca"][k][:80, 0], mu_data_kick[1]["traj_l_pca"][k][:80, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
+        axs[0, 2].plot(mu_data_cnt[mu0]["traj_l_pca"][k][:80, 0], mu_data_cnt[mu0]["traj_l_pca"][k][:80, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
+        axs[0, 2].plot(mu_data_cnt[muf]["traj_l_pca"][k][:80, 0], mu_data_cnt[muf]["traj_l_pca"][k][:80, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
+    axs[0, 2].scatter(mu_data_cnt[mu0]["traj_l_pca"][0][0, 0], mu_data_cnt[mu0]["traj_l_pca"][0][0, 1], c='black', alpha=1, marker="*", s=100)
+    axs[0, 2].set_xlabel("PC1")
+    axs[0, 2].set_xticks([])
+    axs[0, 2].set_yticks([])
+    axs[0, 2].legend(loc="upper left", fontsize=12, bbox_to_anchor=(1.05, 0.0), borderaxespad=0.)
+    
+    axs[1, 2].scatter(muvals[:-2], list(critical_complex_eigs_mean_cnt.values())[:-2], color='darkgray', alpha=0.5)
+    axs[1, 2].plot(muvals[:-2], list(critical_complex_eigs_mean_cnt.values())[:-2], color='darkgray', alpha=0.2, linestyle='--')
+    axs[1, 2].errorbar(muvals[:-2], list(critical_complex_eigs_mean_cnt.values())[:-2], yerr=list(critical_complex_eigs_std_cnt.values())[:-2], fmt='o', color='darkgray', alpha=a_hopf)
+    axs[1, 2].errorbar(muf, critical_complex_eigs_mean_cnt[muf], yerr=critical_complex_eigs_std_cnt[muf], fmt='o', color='darkred', alpha=0.8)
+    axs[1, 2].errorbar(mu0, critical_complex_eigs_mean_cnt[mu0], yerr=critical_complex_eigs_std_cnt[mu0], fmt='o', color='darkblue', alpha=a_inhi)
+    axs[1, 2].errorbar(1, critical_complex_eigs_mean_cnt[1], yerr=critical_complex_eigs_std_cnt[1], fmt='o', color='black', alpha=0.45)
+    axs[1, 2].set_xticks([0, 0.5, 1, 1.5, 2])
+    axs[1, 2].tick_params("x", rotation=45)
+    axs[1, 2].set_xlabel("$\mu$")
     
     plt.tight_layout()
     plt.show()
-    
-    return steps_metric, sign_changes_metric

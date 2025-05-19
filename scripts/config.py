@@ -40,7 +40,7 @@ class DefaultConfig:
         "learning_rates": [0.005, 0.001, 0.0001],
         "tau": 1.0,
         "grad_clip": 0.9,
-        "init": True  # Initialize hidden state with noise
+        "init": True  
     }
     
     @classmethod
@@ -89,15 +89,15 @@ class HMMTwo(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500, 
+        "epochs": 100, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
-        "init": True
+        "init": False
     }
 
     DATA = {
-        "num_seq": 30000,
+        "num_seq": 300,
         "seq_len": 100
     }
 
@@ -114,15 +114,15 @@ class HMMThree(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500,  # Reduced epochs for faster execution
+        "epochs": 100, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
-        "init": True
+        "init": False
     }
 
     DATA = {
-        "num_seq": 30000,
+        "num_seq": 300,
         "seq_len": 30
     }
 
@@ -139,15 +139,15 @@ class HMMFour(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500,  # Reduced epochs for faster execution
+        "epochs": 100, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
-        "init": True
+        "init": False
     }
 
     DATA = {
-        "num_seq": 30000,
+        "num_seq": 300,
         "seq_len": 30
     }
 
@@ -164,14 +164,14 @@ class HMMFive(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 1500,  # Reduced epochs for faster execution
+        "epochs": 100,
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
-        "init": True
+        "init": False
     }
 
     DATA = {
-        "num_seq": 30000,
+        "num_seq": 300,
         "seq_len": 40
     }
