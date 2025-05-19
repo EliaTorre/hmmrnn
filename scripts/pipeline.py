@@ -241,19 +241,19 @@ def plot_trajectories_2d(trajectories, color_labels, plot_title, save_path, fixe
             end = traj[j + 1]
             color = colors[color_label[j]]
             
-            # Plot the segment
-            ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=1)
+            # Plot the segment with thicker line
+            ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=1.5)
             
-            # Add an arrow at each timestep (between current and next point)
+            # Add an arrow at each timestep (between current and next point) with thicker head
             ax.arrow(
                 start[0], start[1],  # Starting point of the arrow
                 end[0] - start[0],  # x-direction
                 end[1] - start[1],  # y-direction
                 color=color,  # Arrow color matches the segment color
-                head_width=0.1,  # Adjust the size of the arrow
-                head_length=0.1,  # Adjust the length of the arrow head
+                head_width=0.15,  # Increased size of the arrow
+                head_length=0.15,  # Increased length of the arrow head
                 length_includes_head=True,
-                lw=0.5
+                lw=0.8  # Increased line width
             )
     
     # Plot the fixed point as a black X if provided
@@ -332,19 +332,19 @@ def create_grid_plot(model_type, trajectories_dict, color_labels_dict, fixed_poi
                         end = traj[l + 1]
                         color = colors[color_label[l]]
                         
-                        # Plot the segment
-                        ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=0.5)
+                        # Plot the segment with thicker line
+                        ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=1.0)
                         
-                        # Add an arrow at each timestep (between current and next point)
+                        # Add an arrow at each timestep (between current and next point) with thicker head
                         ax.arrow(
                             start[0], start[1],  # Starting point of the arrow
                             end[0] - start[0],  # x-direction
                             end[1] - start[1],  # y-direction
                             color=color,  # Arrow color matches the segment color
-                            head_width=0.05,  # Adjust the size of the arrow
-                            head_length=0.05,  # Adjust the length of the arrow head
+                            head_width=0.08,  # Increased size of the arrow
+                            head_length=0.08,  # Increased length of the arrow head
                             length_includes_head=True,
-                            lw=0.3
+                            lw=0.5  # Increased line width
                         )
                 
                 # Plot the fixed point as a black X if available
@@ -422,8 +422,8 @@ def generate_variance_contour_plots(rnn, pca, plot_title, save_path):
             x = torch.normal(mean=0, std=var, size=(rnn.input_size,)).float().to(device)
             h[var_idx, i] = torch.relu(x @ ih.T + h[var_idx, i-1] @ hh.T)
     
-    # Define colors for different variances
-    colors = ['gold', 'orange', 'red', 'darkred', 'black']
+    # Define colors from the inferno colormap (dark purple/black to yellow/orange)
+    colors = plt.cm.inferno(np.linspace(0.9, 0.1, 5))  # Sample 5 colors from the inferno colormap
     handles = []
     labels = []
     
@@ -470,8 +470,8 @@ def create_variance_contour_grid(model_type, rnn_pca_dict, output_folder):
     variances = [0.1, 1.0, 2.0, 3.0, 4.0]
     steps = 5000  # Reduced for grid plot
     
-    # Define colors for different variances
-    colors = ['gold', 'orange', 'red', 'darkred', 'black']
+    # Define colors from the inferno colormap (dark purple/black to yellow/orange)
+    colors = plt.cm.inferno(np.linspace(0.9, 0.1, 5))  # Sample 5 colors from the inferno colormap
     
     # Plot each configuration
     for i, hidden_size in enumerate(hidden_sizes):
@@ -553,8 +553,8 @@ def create_special_variance_contour_plot(model_types, rnn_pca_dict, output_folde
     variances = [0.1, 1.0, 2.0, 3.0, 4.0]
     steps = 5000  # Reduced for grid plot
     
-    # Define colors for different variances
-    colors = ['gold', 'orange', 'red', 'darkred', 'black']
+    # Define colors from the inferno colormap (dark purple/black to yellow/orange)
+    colors = plt.cm.inferno(np.linspace(0.9, 0.1, 5))  # Sample 5 colors from the inferno colormap
     
     # Plot each model type
     for i, model_type in enumerate(model_types):
@@ -662,19 +662,19 @@ def create_special_plot(model_types, trajectories_dict, color_labels_dict, fixed
                     end = traj[l + 1]
                     color = colors[color_label[l]]
                     
-                    # Plot the segment
-                    ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=0.5)
+                    # Plot the segment with thicker line
+                    ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=1.0)
                     
-                    # Add an arrow at each timestep (between current and next point)
+                    # Add an arrow at each timestep (between current and next point) with thicker head
                     ax.arrow(
                         start[0], start[1],  # Starting point of the arrow
                         end[0] - start[0],  # x-direction
                         end[1] - start[1],  # y-direction
                         color=color,  # Arrow color matches the segment color
-                        head_width=0.05,  # Adjust the size of the arrow
-                        head_length=0.05,  # Adjust the length of the arrow head
+                        head_width=0.08,  # Increased size of the arrow
+                        head_length=0.08,  # Increased length of the arrow head
                         length_includes_head=True,
-                        lw=0.3
+                        lw=0.5  # Increased line width
                     )
             
             # Plot the fixed point as a black X if available
@@ -725,6 +725,202 @@ def create_special_plot(model_types, trajectories_dict, color_labels_dict, fixed
     save_path = os.path.join(output_folder, f"special_{mode}_grid.png")
     plt.savefig(save_path, dpi=600, bbox_inches='tight')
     plt.close()
+
+def create_combined_grid_plot(model_types, special_trajectories_no_in, special_color_labels_no_in, special_fixed_points_no_in, 
+                             special_trajectories_in, special_color_labels_in, special_rnn_pca_dict, output_folder):
+    """
+    Create a 3x4 grid plot where rows are different plot types and columns are different models.
+    
+    Args:
+        model_types (list): List of model types to include (HMMTwo, HMMThree, HMMFour, HMMFive)
+        special_trajectories_no_in (dict): Dictionary containing trajectories without input
+        special_color_labels_no_in (dict): Dictionary containing color labels for trajectories without input
+        special_fixed_points_no_in (dict): Dictionary containing fixed points for trajectories without input
+        special_trajectories_in (dict): Dictionary containing trajectories with input
+        special_color_labels_in (dict): Dictionary containing color labels for trajectories with input
+        special_rnn_pca_dict (dict): Dictionary containing (rnn, pca) tuples for different model types
+        output_folder (str): Folder to save the plot
+    """
+    # Create figure with 3x4 grid (rows are plot types, columns are models)
+    fig, axes = plt.subplots(3, 4, figsize=(20, 12))  # Increased width to accommodate legends on the right
+    
+    # Define colors for each output
+    colors = {0: 'darkgreen', 1: 'royalblue', 2: 'darkred'}
+    
+    # Define variance levels for contour plots
+    variances = [0.1, 1.0, 2.0, 3.0, 4.0]
+    steps = 5000  # Reduced for grid plot
+    
+    # Define colors from the inferno colormap for contour plots
+    contour_colors = plt.cm.inferno(np.linspace(0.9, 0.1, 5))
+    
+    # Add column titles
+    column_titles = ["2 States", "3 States", "4 States", "5 States"]
+    for j, title in enumerate(column_titles):
+        axes[0, j].set_title(title, fontsize=14, fontweight='bold', pad=10)
+    
+    # Plot each model type (columns) and plot type (rows)
+    for j, model_type in enumerate(model_types):
+        # First row: traj_no_in plots
+        ax_no_in = axes[0, j]
+        
+        if model_type in special_trajectories_no_in:
+            trajectories = special_trajectories_no_in[model_type]
+            color_labels = special_color_labels_no_in[model_type]
+            fixed_point = special_fixed_points_no_in.get(model_type, None)
+            
+            # Plot trajectories without input
+            for k in range(trajectories.shape[0]):
+                traj = trajectories[k]
+                color_label = color_labels[k]
+                
+                for l in range(len(traj) - 1):
+                    start = traj[l]
+                    end = traj[l + 1]
+                    color = colors[color_label[l]]
+                    
+                    # Plot the segment with thicker line
+                    ax_no_in.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=1.0)
+                    
+                    # Add an arrow with thicker head
+                    ax_no_in.arrow(
+                        start[0], start[1],
+                        end[0] - start[0],
+                        end[1] - start[1],
+                        color=color,
+                        head_width=0.08,
+                        head_length=0.08,
+                        length_includes_head=True,
+                        lw=0.5
+                    )
+            
+            # Plot the fixed point as a black X if available
+            if fixed_point is not None:
+                ax_no_in.scatter(fixed_point[0], fixed_point[1], c='black', marker='x', s=80, linewidth=2, zorder=10)
+        
+        # Second row: traj_in plots
+        ax_in = axes[1, j]
+        
+        if model_type in special_trajectories_in:
+            trajectories = special_trajectories_in[model_type]
+            color_labels = special_color_labels_in[model_type]
+            
+            # Plot trajectories with input
+            for k in range(trajectories.shape[0]):
+                traj = trajectories[k]
+                color_label = color_labels[k]
+                
+                for l in range(len(traj) - 1):
+                    start = traj[l]
+                    end = traj[l + 1]
+                    color = colors[color_label[l]]
+                    
+                    # Plot the segment with thicker line
+                    ax_in.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=1.0)
+                    
+                    # Add an arrow with thicker head
+                    ax_in.arrow(
+                        start[0], start[1],
+                        end[0] - start[0],
+                        end[1] - start[1],
+                        color=color,
+                        head_width=0.08,
+                        head_length=0.08,
+                        length_includes_head=True,
+                        lw=0.5
+                    )
+        
+        # Third row: contour plots
+        ax_contour = axes[2, j]
+        
+        if model_type in special_rnn_pca_dict:
+            rnn, pca = special_rnn_pca_dict[model_type]
+            
+            # Extract weights
+            ih = rnn.rnn.weight_ih_l0.data
+            hh = rnn.rnn.weight_hh_l0.data
+            device = ih.device
+            
+            # Generate hidden states for different variances
+            h = torch.zeros((len(variances), steps, rnn.hidden_size)).to(device)
+            for var_idx, var in enumerate(variances):
+                for k in range(1, steps):
+                    x = torch.normal(mean=0, std=var, size=(rnn.input_size,)).float().to(device)
+                    h[var_idx, k] = torch.relu(x @ ih.T + h[var_idx, k-1] @ hh.T)
+            
+            # Plot contours for each variance
+            for var_idx in range(len(variances)):
+                h_pca = pca.transform(h[var_idx].cpu().numpy())
+                # Add filled contours (shaded areas)
+                sns.kdeplot(x=h_pca[:, 0], y=h_pca[:, 1], levels=[0.01, 0.2], color=contour_colors[var_idx], 
+                           alpha=0.2, bw_adjust=3.0, fill=True, ax=ax_contour, label=None)
+                # Add contour lines
+                sns.kdeplot(x=h_pca[:, 0], y=h_pca[:, 1], levels=[0.05], color=contour_colors[var_idx], 
+                           ax=ax_contour, bw_adjust=3.0, linestyles='solid')
+        
+        # Remove ticks for all plots
+        for i in range(3):
+            axes[i, j].set_xticks([])
+            axes[i, j].set_yticks([])
+        
+        # Set axis labels with explained variance
+        if model_type in special_rnn_pca_dict:
+            _, pca = special_rnn_pca_dict[model_type]
+            # Get explained variance ratios and format as percentages
+            var_ratio_1 = pca.explained_variance_ratio_[0] * 100
+            var_ratio_2 = pca.explained_variance_ratio_[1] * 100
+            
+            # Only add x-axis labels to the third row (contour plots)
+            axes[2, j].set_xlabel(f'PC1 ({var_ratio_1:.1f}%)', fontsize=14)
+            
+            # Add PC2 with variance percentage to y-axis only for the first column
+            if j == 0:
+                for i in range(3):
+                    axes[i, j].set_ylabel(f'PC2 ({var_ratio_2:.1f}%)', fontsize=14)
+    
+    # Create legend for trajectory plots
+    green_patch = Patch(color='darkgreen', label='Logit 0')
+    blue_patch = Patch(color='royalblue', label='Logit 1')
+    red_patch = Patch(color='darkred', label='Logit 2')
+    black_x = plt.Line2D([0], [0], marker='x', color='black', markersize=10, label='Fixed Point')
+    
+    # Create legend for contour plots
+    contour_handles = [plt.Line2D([0], [0], color=contour_colors[i], linestyle='solid') 
+                      for i in range(len(variances))]
+    contour_labels = [f'Variance={variances[i]}' for i in range(len(variances))]
+    
+    # Create two separate legends
+    # First legend (trajectory plots) - positioned to the right of the first two rows
+    first_legend = fig.legend(
+        handles=[green_patch, blue_patch, red_patch, black_x],
+        labels=['Logit 0', 'Logit 1', 'Logit 2', 'Fixed Point'],
+        loc='center right',
+        bbox_to_anchor=(1.15, 0.65),  # Position between traj_no_in and traj_in rows
+        fontsize=14
+    )
+    
+    # Second legend (contour plots) - positioned to the right of the third row
+    second_legend = fig.legend(
+        handles=contour_handles,
+        labels=contour_labels,
+        loc='center right',
+        bbox_to_anchor=(1.15, 0.25),  # Position aligned with contour plots
+        fontsize=14
+    )
+    
+    # Add both legends to the figure
+    fig.add_artist(first_legend)
+    fig.add_artist(second_legend)
+    
+    # Adjust layout
+    plt.tight_layout(rect=[0, 0, 0.85, 0.95])  # Leave space for the legends on the right
+    
+    # Save the figure
+    save_path = os.path.join(output_folder, "combined_grid_plot.png")
+    plt.savefig(save_path, dpi=600, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Combined grid plot saved to {save_path}")
 
 def run_pipeline(traj_no_in=True, traj_in=True, variance_contour_plots=True):
     """
@@ -886,6 +1082,11 @@ def run_pipeline(traj_no_in=True, traj_in=True, variance_contour_plots=True):
         create_special_plot(model_types, special_trajectories_in, special_color_labels_in, special_fixed_points_in, traj_in_folder, with_input=True, rnn_pca_dict=special_rnn_pca_dict)
     if variance_contour_plots:
         create_special_variance_contour_plot(model_types, special_rnn_pca_dict, variance_contour_folder)
+    
+    # Create the combined grid plot
+    create_combined_grid_plot(model_types, special_trajectories_no_in, special_color_labels_no_in, 
+                             special_fixed_points_no_in, special_trajectories_in, special_color_labels_in, 
+                             special_rnn_pca_dict, ".")
     
     print("\nPipeline completed successfully!")
 

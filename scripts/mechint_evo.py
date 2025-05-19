@@ -31,17 +31,17 @@ def model_evolution(evolution_dir, best_model_path, num_steps_best=30000, num_st
 
     pca = PCA(n_components=2, random_state=0)
     h_best_pca = pca.fit_transform(h_best_np)
-    pc1_max = 100
-    pc1_min = -100
-    pc2_max = 100
-    pc2_min = -100
+    pc1_max = 50
+    pc1_min = -50
+    pc2_max = 50
+    pc2_min = -50
 
     model_files = get_model_files(evolution_dir)
     trajectories_pca = []
     epochs_list = []
     
-    # Define the desired epochs to plot (interpreting range(0-20) as 1 to 20)
-    desired_epochs = range(1, 201)
+    # Define the desired epochs to plot (every 5th epoch from 1 to 200)
+    desired_epochs = range(1, 201, 5)
     
     for model_file in model_files:
         epoch = int(re.search(r'model_epoch_(\d+).pth', model_file).group(1))
@@ -77,7 +77,9 @@ def model_evolution(evolution_dir, best_model_path, num_steps_best=30000, num_st
     # Add more top margin to the subplot
     ax = fig.add_subplot(111, projection='3d')
     
-    cmap = plt.cm.viridis
+    # Create color maps for logit 0 (green) and logit 2 (red)
+    green_cmap = plt.cm.Greens
+    red_cmap = plt.cm.Reds
     norm = plt.Normalize(min(epochs_list), max(epochs_list))
 
     for traj, epoch in zip(trajectories_pca, epochs_list):
@@ -86,16 +88,80 @@ def model_evolution(evolution_dir, best_model_path, num_steps_best=30000, num_st
             pc1 = traj[:, 0]
             pc2 = traj[:, 1]
             z = np.full(pc1.shape, epoch)
-            color = cmap(norm(epoch))
-            ax.scatter(pc1, pc2, z, alpha=0.5, s=2, color=color)
+            
+            # Calculate logits by projecting hidden states onto the linear layer
+            rnn_model = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, output_size=3, biased=[False, False])
+            rnn_model.load_model(str(evolution_dir / f"model_epoch_{epoch}.pth"))
+            fc_weights = rnn_model.fc.weight.data
+            
+            # Get the hidden states from the trajectory
+            h_other_np = pca.inverse_transform(traj)
+            h_other_tensor = torch.tensor(h_other_np).float().to(fc_weights.device)
+            
+            # Project hidden states onto the linear layer to get logits
+            logits = h_other_tensor @ fc_weights.T
+            
+            # Determine the dominant logit for each point
+            dominant_logits = torch.argmax(logits, dim=1).cpu().numpy()
+            
+            # Create arrows showing the motion (use every nth point to avoid overcrowding)
+            n = 5  # Use every 5th point
+            for i in range(0, len(pc1)-n, n):
+                # Get the dominant logit for this segment
+                dom_logit = dominant_logits[i]
+                
+                # Choose color based on dominant logit and epoch (darker as epoch increases)
+                if dom_logit == 0:  # Green for logit 0
+                    color = green_cmap(norm(epoch))
+                elif dom_logit == 2:  # Red for logit 2
+                    color = red_cmap(norm(epoch))
+                else:  # Gray for logit 1
+                    color = (0.5, 0.5, 0.5, 0.5)  # Gray with some transparency
+                
+                # Draw arrow
+                ax.quiver(pc1[i], pc2[i], z[i], 
+                          pc1[i+n] - pc1[i], pc2[i+n] - pc2[i], z[i+n] - z[i],
+                          color=color, alpha=0.7, arrow_length_ratio=0.3, linewidth=1.5)
         else:
             print(f"Warning: Trajectory for epoch {epoch} exceeds best model's PC1/PC2 bounds. Skipping.")
             # Limit the trajectory to the bounds
             pc1 = np.clip(traj[:, 0], pc1_min, pc1_max)
             pc2 = np.clip(traj[:, 1], pc2_min, pc2_max)
             z = np.full(pc1.shape, epoch)
-            color = cmap(norm(epoch))
-            ax.scatter(pc1, pc2, z, alpha=0.1, s=2, color=color)
+            
+            # Calculate logits by projecting hidden states onto the linear layer
+            rnn_model = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, output_size=3, biased=[False, False])
+            rnn_model.load_model(str(evolution_dir / f"model_epoch_{epoch}.pth"))
+            fc_weights = rnn_model.fc.weight.data
+            
+            # Get the hidden states from the trajectory
+            h_other_np = pca.inverse_transform(traj)
+            h_other_tensor = torch.tensor(h_other_np).float().to(fc_weights.device)
+            
+            # Project hidden states onto the linear layer to get logits
+            logits = h_other_tensor @ fc_weights.T
+            
+            # Determine the dominant logit for each point
+            dominant_logits = torch.argmax(logits, dim=1).cpu().numpy()
+            
+            # Create arrows showing the motion (use every nth point to avoid overcrowding)
+            n = 5  # Use every 5th point
+            for i in range(0, len(pc1)-n, n):
+                # Get the dominant logit for this segment
+                dom_logit = dominant_logits[i]
+                
+                # Choose color based on dominant logit and epoch (darker as epoch increases)
+                if dom_logit == 0:  # Green for logit 0
+                    color = green_cmap(norm(epoch))
+                elif dom_logit == 2:  # Red for logit 2
+                    color = red_cmap(norm(epoch))
+                else:  # Gray for logit 1
+                    color = (0.5, 0.5, 0.5, 0.5)  # Gray with some transparency
+                
+                # Draw arrow with reduced alpha for out-of-bounds trajectories
+                ax.quiver(pc1[i], pc2[i], z[i], 
+                          pc1[i+n] - pc1[i], pc2[i+n] - pc2[i], z[i+n] - z[i],
+                          color=color, alpha=0.3, arrow_length_ratio=0.3, linewidth=1.5)
 
     ax.set_xlabel('PC1', fontsize=12)
     ax.set_ylabel('PC2', fontsize=12)
@@ -103,12 +169,16 @@ def model_evolution(evolution_dir, best_model_path, num_steps_best=30000, num_st
     ax.view_init(elev=20, azim=80)
     
     # Use a shorter title for the plot itself
-    ax.set_title("3D Trajectories within Best Model's PCA Bounds", pad=20)
+    ax.set_title("3D Trajectories with Dominant Logit Coloring", pad=20)
 
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([]) 
-    cbar = plt.colorbar(sm, ax=ax)
-    cbar.set_label('Epoch', rotation=270, labelpad=15)
+    # Create custom legend for logit colors
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color='green', lw=2, label='Logit 0 (Green)'),
+        Line2D([0], [0], color='gray', lw=2, label='Logit 1 (Gray)'),
+        Line2D([0], [0], color='red', lw=2, label='Logit 2 (Red)')
+    ]
+    ax.legend(handles=legend_elements, loc='upper right')
 
     if best_steps_to_plot > 0:
         ax.legend()
