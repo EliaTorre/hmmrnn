@@ -229,8 +229,8 @@ def compare_hmm_rnn_transition_matrices():
                         )
                         
                         # Set sequence parameters based on model type
-                        num_seq = 100  # 5k for all models
-                        seq_len = 10
+                        num_seq = 5000  # 5k for all models
+                        seq_len = 100
                             
                         print(f"        Using num_seq={num_seq}, seq_len={seq_len}")
                         
@@ -455,8 +455,8 @@ def compare_hmm_rnn_euclidean_distances():
                         )
                         
                         # Set sequence parameters based on model type
-                        num_seq = 100  # 5k for all models
-                        seq_len = 10
+                        num_seq = 5000  # 5k for all models
+                        seq_len = 100
                             
                         print(f"        Using num_seq={num_seq}, seq_len={seq_len}")
                         

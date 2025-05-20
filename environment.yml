@@ -9,6 +9,8 @@ dependencies:
   - pytorch>=1.7.0
   - matplotlib>=3.3.0
   - scikit-learn>=0.24.0
+  - ipykernel>=6.0.0
+  - jupyter>=1.0.0
   - pip>=20.0
   - pip:
     - hmmlearn>=0.2.5

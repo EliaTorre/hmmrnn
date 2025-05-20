@@ -26,7 +26,7 @@ conda activate hmmrnn
 The repository is organized as follows:
 
 - `scripts/`: Contains all Python scripts for the project
-- `TrainedModels/`: Contains pre-trained RNN models (downloadable separately)
+- `TrainedModels/`: Contains pre-trained RNN models (downloadable from https://drive.google.com/file/d/1qsSK-hI2xw8pl24dYlXN6ssa_0qAUFpL/view?usp=sharing)
 - `main.ipynb`: Jupyter notebook with step-by-step guide to run all functions
 
 ### TrainedModels Folder
