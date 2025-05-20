@@ -1,4 +1,6 @@
-# RNN Reverse Engineering
+# Mechanistic Interpretability of RNNs emulating Hidden Markov Models
+
+![Header image](header.png)
 
 This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). The project focuses on understanding the internal representations and dynamics of RNNs at the single-neuron level.
 
@@ -16,7 +18,7 @@ Alternatively, you can create a conda environment:
 
 ```bash
 conda env create -f environment.yml
-conda activate deep
+conda activate hmmrnn
 ```
 
 ## Repository Structure

@@ -1,4 +1,4 @@
-name: deep
+name: hmmrnn
 channels:
   - pytorch
   - conda-forge
