@@ -1,33 +1,17 @@
-import os
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd.functional import jacobian
-from torch.nn.functional import softmax
+import os, torch, matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-from pathlib import Path
-from sklearn.decomposition import PCA
-from scipy.stats import mode
-from matplotlib.colors import Normalize
-from matplotlib.cm import ScalarMappable
-from matplotlib.ticker import MultipleLocator
-from matplotlib.collections import LineCollection
-import matplotlib 
 import matplotlib.colors as mcolors
-from matplotlib.colors import BoundaryNorm
-from mpl_toolkits.mplot3d import Axes3D
-from scripts.rnn import RNN
-from scipy import linalg
-import itertools
 from tqdm import tqdm
-import pandas as pd
-from scipy.stats import norm, pearsonr, gaussian_kde
-from scipy.interpolate import griddata
-from scipy.ndimage import gaussian_filter1d
-import plotly.graph_objects as go
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
+from scripts.rnn import RNN
+from sklearn.decomposition import PCA
+from matplotlib.cm import ScalarMappable
+from matplotlib.collections import LineCollection
+
+def load_model(model_path, input_size=100, hidden_size=150, output_size=3):
+    rnn = RNN(input_size=input_size, hidden_size=hidden_size, output_size=output_size)
+    rnn.load_model(model_path)
+    return rnn
 
 def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20, T=1000):
     # Load model
@@ -127,7 +111,6 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     group1 = avg_steps < 2
     group2 = (avg_steps >= cutoffcol) & (avg_steps <= 4*cutoffcol)
     group3 = (avg_steps > 4*cutoffcol) & ((logits[:, 0].cpu().numpy() > 0.8) | (logits[:, 2].cpu().numpy() > 0.8))
-    print(group1.sum(), group2.sum(), group3.sum())
     
     # Compute average number of unstable eigenvalues and residency time for each group
     avg_num_unstable_group1 = np.mean([num_unstable_list[i] for i in range(T) if group1[i]]) if np.any(group1) else 0
@@ -214,24 +197,11 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     cbar2.set_ticks([0.5, 1.5, 2.5])
     cbar2.ax.set_xticklabels(['0', '1', '2'], fontsize=14)
     
-    #plt.savefig(f'residency_{title}.png', dpi=600, bbox_inches='tight')
     plt.show()
 
-def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=[83, 59, 44, 28, 72, 114], n_steps=1000, device=None):
+def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=[83, 59, 6, 28, 72, 114], n_steps=1000, device=None):
     """
     Simulate RNN trajectories and plot the activities of specified neurons, given a model path.
-
-    Parameters:
-    - model_path (str): Path to the saved RNN model.
-    - initial_hidden_states (torch.Tensor, optional): Tensor of shape (n_trajectories, hidden_size) for initial states.
-      If None, random initial states are generated with n_trajectories=1.
-    - specified_neurons (list): List of neuron indices to plot. Default is [83, 59, 44, 28, 72, 114].
-    - n_steps (int): Number of steps to simulate. Default is 1000.
-    - device (str or torch.device): Device for computations. If None, uses 'cuda' if available, else 'cpu'.
-
-    Notes:
-    - The function assumes the RNN has input_size=100, hidden_size=150, num_layers=1, output_size=3.
-    - PCA is fitted internally on the simulated hidden states.
     """
     # Set device
     if device is None:
@@ -768,7 +738,7 @@ def weight_matrices(W_r):
     fig, axs = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
     
     # Define neuron indices for kick groups
-    vec = np.array([83, 59, 44, 28, 72, 114])
+    vec = np.array([83, 6, 59, 114, 72, 28])
     
     # Plot 1: Kick Neurons ⇄ Kick Neurons
     axs[0].imshow(W_r[vec,:][:, vec], cmap='bwr', aspect='auto')
@@ -778,8 +748,8 @@ def weight_matrices(W_r):
     
     # Calculate top-k integrating neurons
     topk = 70
-    g1 = W_r[[83, 59, 44], :].mean(axis=0)
-    g2 = W_r[[28, 72, 114], :].mean(axis=0)
+    g1 = W_r[[83, 6, 59], :].mean(axis=0)
+    g2 = W_r[[114, 72, 28], :].mean(axis=0)
     sortmap = np.argsort(g1 * g2)
     
     g1 = g1[sortmap][:topk]
@@ -809,20 +779,9 @@ def weight_matrices(W_r):
     cbar.set_label("Weight value")
     plt.show()
 
-def mean_activities(model_path, T=300, kick_group1=[83,59,44], kick_group2=[28,72,114], topk=70, sigmaj=1, TMaxx=200):
+def mean_activities(model_path, T=300, kick_group1=[83,6,59], kick_group2=[114,72,28], topk=70, sigmaj=1, TMaxx=200):
     """
     Plot the mean activities of kick neurons and integrating populations over time.
-
-    Parameters:
-    - model_path (str): Path to the saved RNN model.
-    - T (int): Number of time steps to simulate. Default is 300.
-    - kick_group1 (list): Indices of neurons used to compute g1 for selecting integrating populations.
-      Note: In the plot, these are labeled as "Kick Group 2". Default is [83,59,44].
-    - kick_group2 (list): Indices of neurons used to compute g2 for selecting integrating populations.
-      Note: In the plot, these are labeled as "Kick Group 1". Default is [28,72,114].
-    - topk (int): Number of top neurons to select for integrating populations. Default is 70.
-    - sigmaj (float): Standard deviation of the noise. Default is 1.
-    - TMaxx (int): Maximum time steps to plot. Default is 200.
     """
     # Load weights
     W_r, W_n, W_o = load_weights(model_path)
@@ -1049,7 +1008,7 @@ def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_
     plt.title('PCA of Latent Dynamics Across Epochs')
     plt.show()
 
-def ablation(weights_path, ablated_neurons=[83, 59, 44], verbose=False):
+def ablation(weights_path, ablated_neurons=[83, 59, 6], verbose=False):
     # other kick neurons triplet: [28, 72, 114]
     """Generate the final 2x3 plot from weights file."""
     # Load weights
@@ -1080,7 +1039,7 @@ def ablation(weights_path, ablated_neurons=[83, 59, 44], verbose=False):
     mask3 = kprojected(W_r, ablated_neurons[2], top_k=65, reversed=True)
     mask = (mask | mask2) | mask3
     cn_noise[np.where(mask)] = 1
-    cn_noise[[28, 72, 114, 59, 83, 44]] = 0
+    cn_noise[[28, 72, 114, 59, 6, 83]] = 0
     
     # Control
     c_cnt = np.zeros(W_r.shape[0])
@@ -1089,14 +1048,14 @@ def ablation(weights_path, ablated_neurons=[83, 59, 44], verbose=False):
     mask = np.any(np.stack([
         kprojected(W_r, 83, top_k=top_k, reversed=True),
         kprojected(W_r, 59, top_k=top_k, reversed=True),
-        kprojected(W_r, 44, top_k=top_k, reversed=True),
+        kprojected(W_r, 6, top_k=top_k, reversed=True),
         kprojected(W_r, 28, top_k=top_k, reversed=True),
         kprojected(W_r, 72, top_k=top_k, reversed=True),
         kprojected(W_r, 114, top_k=top_k, reversed=True)
     ]), axis=0).flatten()
     mask = ~mask
     cn_cnt[np.where(mask)] = 1
-    cn_cnt[[28, 72, 114, 59, 83, 44]] = 0
+    cn_cnt[[28, 72, 114, 59, 6, 83]] = 0
     
     # Run simulations
     mu_data_kick = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_kick, cn_kick, T, sigmaj, gamm_noise)

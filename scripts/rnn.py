@@ -1,10 +1,8 @@
-import torch
+import torch, geomloss
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import geomloss
 import matplotlib.pyplot as plt
-import numpy as np
 from pathlib import Path 
 
 class RNN(nn.Module):

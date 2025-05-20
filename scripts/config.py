@@ -1,5 +1,3 @@
-import numpy as np
-
 """
 Configuration module for HMM-RNN experiments.
 """
@@ -89,7 +87,7 @@ class HMMTwo(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 100, 
+        "epochs": 500, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -97,7 +95,7 @@ class HMMTwo(DefaultConfig):
     }
 
     DATA = {
-        "num_seq": 300,
+        "num_seq": 30000,
         "seq_len": 100
     }
 
@@ -114,7 +112,7 @@ class HMMThree(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 100, 
+        "epochs": 500, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -122,7 +120,7 @@ class HMMThree(DefaultConfig):
     }
 
     DATA = {
-        "num_seq": 300,
+        "num_seq": 30000,
         "seq_len": 30
     }
 
@@ -139,7 +137,7 @@ class HMMFour(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 100, 
+        "epochs": 500, 
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -147,7 +145,7 @@ class HMMFour(DefaultConfig):
     }
 
     DATA = {
-        "num_seq": 300,
+        "num_seq": 30000,
         "seq_len": 30
     }
 
@@ -164,7 +162,7 @@ class HMMFive(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 100,
+        "epochs": 500,
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.9,
@@ -172,6 +170,6 @@ class HMMFive(DefaultConfig):
     }
 
     DATA = {
-        "num_seq": 300,
+        "num_seq": 30000,
         "seq_len": 40
     }
