@@ -8,16 +8,6 @@ class Test:
     Class for testing and comparing HMM and RNN models.
     """
     def __init__(self, hmm, rnn, num_seq, seq_len, outputs):
-        """
-        Initialize the model tester.
-        
-        Args:
-            hmm: HMM instance
-            rnn: RNN instance
-            num_seq (int): Number of sequences to test
-            seq_len (int): Length of each sequence
-            outputs (int): Number of output symbols
-        """
         self.hmm = hmm
         self.rnn = rnn
         self.num_seq = num_seq
@@ -34,12 +24,7 @@ class Test:
             self.colors_dict = {i: colors[i % len(colors)] for i in range(outputs)}
     
     def gen_test_data(self):
-        """
-        Generate test data from both HMM and RNN.
-        
-        Returns:
-            dict: Dictionary containing HMM and RNN data
-        """
+        """Generate test data from both HMM and RNN."""
         print("Generating HMM test sequences...")
         # Generate HMM sequences
         self.hmm_data, _ = self.hmm.gen_seq(self.num_seq, self.seq_len)
@@ -58,16 +43,7 @@ class Test:
         }
     
     def match(self, seq1, seq2):
-        """
-        Match similar sequences using Sinkhorn transport.
-        
-        Args:
-            seq1: First sequence
-            seq2: Second sequence
-            
-        Returns:
-            tuple: (matched_seq1, matched_seq2)
-        """
+        """Match similar sequences using Sinkhorn transport."""
         sinkhorn = SinkhornSolver(epsilon=0.1, iterations=1000)
         
         # Flatten sequences
@@ -87,12 +63,7 @@ class Test:
         return matched_seq1, matched_seq2
     
     def euclidean_distances(self):
-        """
-        Calculate Euclidean distances between matched sequences.
-        
-        Returns:
-            dict: Dictionary containing HMM and RNN distances
-        """
+        """Calculate Euclidean distances between matched sequences."""
         print("Calculating Euclidean distances...")
         # Match HMM with HMM for baseline
         hmm_matched1, hmm_matched2 = self.match(self.hmm_data2, self.hmm_data3)
@@ -110,30 +81,14 @@ class Test:
         }
     
     def volatilities(self, seq):
-        """
-        Calculate observation volatilities (frequency of state changes).
-        
-        Args:
-            seq: Sequence data
-            
-        Returns:
-            tuple: (mean_volatility, std_volatility)
-        """
+        """Calculate observation volatilities (frequency of state changes)."""
         seq_max = np.argmax(seq, axis=2)
         diff = np.diff(seq_max, axis=1)
         changes = np.count_nonzero(diff, axis=1)
         return np.mean(changes), np.std(changes)
     
     def frequencies(self, seq):
-        """
-        Calculate the frequency of each output in the sequences.
-        
-        Args:
-            seq: Sequence data
-            
-        Returns:
-            tuple: (mean_frequencies, std_frequencies)
-        """
+        """Calculate the frequency of each output in the sequences."""
         frequencies = np.zeros((seq.shape[0], seq.shape[2]))
         seq_max = np.argmax(seq, axis=2)
         
@@ -144,15 +99,7 @@ class Test:
         return np.mean(frequencies, axis=0), np.std(frequencies, axis=0)
     
     def transition_matrices(self, seq):
-        """
-        Calculate transition matrices between states.
-        
-        Args:
-            seq: Sequence data
-            
-        Returns:
-            np.ndarray: Transition matrix
-        """
+        """Calculate transition matrices between states."""
         mat = np.zeros((self.outputs, self.outputs))
         seq_max = np.argmax(seq, axis=2)
         for i in range(seq.shape[0]):
@@ -161,12 +108,7 @@ class Test:
         return mat/mat.sum(axis=1, keepdims=True)
 
     def run_all(self):
-        """
-        Run all tests and return the results.
-        
-        Returns:
-            dict: Dictionary containing all test results
-        """
+        """Run all tests and return the results."""
         print("Generating test data...")
         self.gen_test_data()
         
@@ -202,14 +144,7 @@ class Test:
         }
     
     def gen_plots(self, results, save_path="", model_info=None):
-        """
-        Generate and save comparison plots.
-        
-        Args:
-            results (dict): Results from run_all()
-            save_path (str): Path to save plots
-            model_info (dict, optional): Dictionary containing model information
-        """
+        """Generate and save comparison plots."""
         print("Generating comparison plots...")
         
         # Extract model info if provided
@@ -327,9 +262,6 @@ class Test:
             for i in range(self.outputs):
                 for j in range(self.outputs):
                     ax.text(j, i, f"{matrix[i, j]:.2f}", va="center", ha="center")
-        
-        # Add colorbar with proper spacing
-        #cbar = fig.colorbar(cax, ax=axs, shrink=0.8, pad=0.02)
         
         # Adjust layout to prevent overlap
         plt.tight_layout(rect=[0, 0, 0.95, 0.9])

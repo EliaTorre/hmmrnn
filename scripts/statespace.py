@@ -11,9 +11,7 @@ from scripts.metrics import get_specific_models
 from scripts.mechint import load_model
 
 def extract_rnn_models():
-    """
-    Extract all RNN models trained, similar to what's done in scripts/plots.py.
-    """
+    """Extract all RNN models trained, similar to what's done in scripts/plots.py."""
     # Get models with their configurations
     models_with_configs = get_specific_models(with_config=True)
     
@@ -49,9 +47,7 @@ def extract_rnn_models():
     return grouped_models
 
 def run_model_and_compute_pca(model_path, input_size, hidden_size, time_steps=30000):
-    """
-    Run a model for the specified number of timesteps and compute PCA.
-    """
+    """Run a model for the specified number of timesteps and compute PCA."""
     try:
         # Load the model
         rnn = load_model(model_path, input_size=input_size, hidden_size=hidden_size)
@@ -81,10 +77,7 @@ def run_model_and_compute_pca(model_path, input_size, hidden_size, time_steps=30
         return None
 
 def generate_trajectories_no_input(rnn, pca, num_samples=100, trajectory_length=500):
-    """
-    Generate trajectories without input, starting from random initial conditions.
-    Also computes the fixed point by averaging the final states of all trajectories.
-    """
+    """Generate trajectories without input, starting from random initial conditions."""
     # Generate 30k timesteps to sample from
     print("Generating 30k timesteps to sample initial conditions...")
     rnn_data = rnn.gen_seq(time_steps=30000, dynamics_mode="full")
@@ -134,9 +127,7 @@ def generate_trajectories_no_input(rnn, pca, num_samples=100, trajectory_length=
     return trajectories, color_labels, fixed_point_pca
 
 def generate_trajectories_with_input(rnn, pca, num_samples=1, trajectory_length=500, fixed_point_pca=None):
-    """
-    Generate trajectories with input, starting from random initial conditions.
-    """
+    """Generate trajectories with input, starting from random initial conditions."""
     # Generate 30k timesteps to sample from
     print("Generating 30k timesteps to sample initial conditions...")
     rnn_data = rnn.gen_seq(time_steps=30000, dynamics_mode="full")
@@ -175,9 +166,7 @@ def generate_trajectories_with_input(rnn, pca, num_samples=1, trajectory_length=
     return trajectories, color_labels, fixed_point_pca
 
 def plot_trajectories_2d(trajectories, color_labels, plot_title, save_path, fixed_point=None):
-    """
-    Plot 2D trajectories with colors based on the argmax of the logits.
-    """
+    """Plot 2D trajectories with colors based on the argmax of the logits."""
     # Define colors for each output
     colors = {0: 'darkgreen', 1: 'royalblue', 2: 'darkred'}
     
@@ -243,9 +232,7 @@ def plot_trajectories_2d(trajectories, color_labels, plot_title, save_path, fixe
     plt.close()
 
 def create_grid_plot(model_type, trajectories_dict, color_labels_dict, fixed_points_dict, output_folder, with_input=False):
-    """
-    Create a 4x3 grid of plots for a specific model type.
-    """
+    """Create a 4x3 grid of plots for a specific model type."""
     # Create figure with 4x3 grid
     fig, axes = plt.subplots(3, 4, figsize=(16, 12))
     
@@ -342,10 +329,7 @@ def create_grid_plot(model_type, trajectories_dict, color_labels_dict, fixed_poi
     plt.close()
 
 def generate_variance_contour_plots(rnn, pca, plot_title, save_path):
-    """
-    Generate contour plots showing where 95% of the variance of the trajectory resides
-    for different input variances.
-    """
+    """Generate contour plots showing where 95% of the variance of the trajectory resides for different input variances."""
     # Extract weights
     ih = rnn.rnn.weight_ih_l0.data
     hh = rnn.rnn.weight_hh_l0.data
@@ -391,9 +375,7 @@ def generate_variance_contour_plots(rnn, pca, plot_title, save_path):
     plt.close()
 
 def create_variance_contour_grid(model_type, rnn_pca_dict, output_folder):
-    """
-    Create a 4x3 grid of variance contour plots for a specific model type.
-    """
+    """Create a 4x3 grid of variance contour plots for a specific model type."""
     # Create figure with 4x3 grid
     fig, axes = plt.subplots(3, 4, figsize=(16, 12))
     
@@ -472,9 +454,7 @@ def create_variance_contour_grid(model_type, rnn_pca_dict, output_folder):
     plt.close()
 
 def create_special_variance_contour_plot(model_types, rnn_pca_dict, output_folder):
-    """
-    Create a special 1x4 grid of variance contour plots for the case of RNN with 150 units and input 100.
-    """
+    """Create a special 1x4 grid of variance contour plots for the case of RNN with 150 units and input 100."""
     # Create figure with 1x4 grid
     fig, axes = plt.subplots(1, 4, figsize=(20, 5))
     axes = axes.flatten()
@@ -552,9 +532,7 @@ def create_special_variance_contour_plot(model_types, rnn_pca_dict, output_folde
     plt.close()
 
 def create_special_plot(model_types, trajectories_dict, color_labels_dict, fixed_points_dict, output_folder, with_input=False, rnn_pca_dict=None):
-    """
-    Create a special 1x4 grid of plots for the case of RNN with 150 units and input 100.
-    """
+    """Create a special 1x4 grid of plots for the case of RNN with 150 units and input 100."""
     # Create figure with 1x4 grid
     fig, axes = plt.subplots(1, 4, figsize=(20, 5))
     axes = axes.flatten()
@@ -649,9 +627,7 @@ def create_special_plot(model_types, trajectories_dict, color_labels_dict, fixed
 
 def create_combined_grid_plot(model_types, special_trajectories_no_in, special_color_labels_no_in, special_fixed_points_no_in, 
                              special_trajectories_in, special_color_labels_in, special_rnn_pca_dict, output_folder):
-    """
-    Create a 3x4 grid plot where rows are different plot types and columns are different models.
-    """
+    """Create a 3x4 grid plot where rows are different plot types and columns are different models."""
     # Create figure with 3x4 grid (rows are plot types, columns are models)
     fig, axes = plt.subplots(3, 4, figsize=(20, 12))  # Increased width to accommodate legends on the right
     
@@ -834,9 +810,7 @@ def create_combined_grid_plot(model_types, special_trajectories_no_in, special_c
     print(f"Combined grid plot saved to {save_path}")
 
 def run_pipeline(traj_no_in=True, traj_in=True, variance_contour_plots=True):
-    """
-    Main function to run the pipeline.
-    """
+    """Main function to run the pipeline."""
     # Extract all RNN models
     print("Extracting RNN models...")
     grouped_models = extract_rnn_models()

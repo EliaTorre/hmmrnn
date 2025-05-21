@@ -2,7 +2,7 @@
 
 ![Header image](pipe.svg)
 
-This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). The project focuses on understanding the internal representations and dynamics of RNNs at the single-neuron level.
+This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). The project focuses on understanding the internal representations of RNNs from the global dynamical properties down to the single-neuron level mechanism. 
 
 ## Installation
 
@@ -77,7 +77,7 @@ Implements the Hidden Markov Model (HMM) class for generating sequences. Feature
 
 Implements the Recurrent Neural Network (RNN) class. Features:
 - RNN architecture with configurable input size, hidden size, and output size
-- Training with Sinkhorn divergence loss
+- Training with Sinkhorn divergence loss and plotting of train/val losses
 - Sequence generation, model saving and loading
 
 ### test.py
@@ -93,7 +93,7 @@ Implements the Test class for evaluating and comparing HMM and RNN models at the
 
 Implements the Reverse class for reverse engineering analysis of RNNs for quick visualization after training. Features:
 - Principal Component Analysis (PCA) of hidden states
-- 2D and 3D visualization of latent trajectories
+- Quick visualization of latent trajectories for inspection upon training
 - Analysis of explained variance
 
 ### manager.py
@@ -106,7 +106,7 @@ Implements the Manager class for experiment execution, data handling, and result
 
 ### metrics.py and statespace.py
 
-Implements functions for large-scale plotting of metrics and trajectories in PCA space across all configurations and trained RNNs presented in the paper:
+Implement functions for large-scale plotting of metrics and trajectories in PCA space across all configurations and trained RNNs presented in the paper:
 - 144 models: {2,3,4,5} HMM latent states x {50, 150, 200} RNN hidden size x {1, 10, 100, 200} input size x {3} random seeds.
 - Transition matrix calculation and plotting
 - Euclidean distance calculation and plotting

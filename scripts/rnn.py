@@ -54,23 +54,6 @@ class RNN(nn.Module):
                     save_interval=None, save_path=None):
         """
         Train the RNN model.
-        
-        Args:
-            train_seq (torch.Tensor): Training sequences
-            val_seq (torch.Tensor): Validation sequences
-            batch_size (int): Batch size
-            lr (float): Learning rate
-            tau (float): Temperature for Gumbel-Softmax
-            epochs (int): Number of training epochs
-            grad_clip (float): Gradient clipping threshold
-            init (bool): Whether to initialize hidden state with noise
-            criterion: Loss function
-            verbose (bool): Whether to print progress
-            save_interval (int, optional): Save model every save_interval epochs
-            save_path (Path or str, optional): Directory to save intermediate models
-            
-        Returns:
-            tuple: (train_losses, val_losses, best_model, best_loss)
         """
         if verbose:
             print(f"Training on device: {self.device}")
@@ -160,19 +143,7 @@ class RNN(nn.Module):
         return self.train_losses, self.val_losses, self.best_model, self.best_loss
     
     def gen_seq(self, time_steps=None, dynamics_mode="full", batch_mode=False, num_seq=None, seq_len=None):
-        """
-        Generate sequences from the trained RNN model.
-        
-        Args:
-            time_steps (int, optional): Number of time steps to generate (required when batch_mode=False)
-            dynamics_mode (str): Dynamics mode ('full', 'recurrence_only', 'input_only')
-            batch_mode (bool): Whether to generate sequences in batch mode (with shape [num_seq, seq_len, ...])
-            num_seq (int, optional): Number of sequences to generate (required when batch_mode=True)
-            seq_len (int, optional): Length of each sequence (required when batch_mode=True)
-            
-        Returns:
-            dict: Dictionary containing hidden states, logits, and outputs
-        """
+        """Generate sequences from the trained RNN model."""
         self.eval()
         
         # Extract weights

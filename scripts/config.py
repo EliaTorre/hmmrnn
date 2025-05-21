@@ -1,6 +1,4 @@
-"""
-Configuration module for HMM-RNN experiments.
-"""
+"""Configuration module for HMM-RNN experiments."""
 
 class DefaultConfig:
     """Default configuration for experiments"""
@@ -100,7 +98,6 @@ class HMMTwo(DefaultConfig):
     }
 
 class HMMThree(DefaultConfig):
-    """Configuration for a small HMM experiment (3 states, 3 outputs)"""
     HMM = {
         "states": 3,
         "outputs": 3,
@@ -125,7 +122,6 @@ class HMMThree(DefaultConfig):
     }
 
 class HMMFour(DefaultConfig):
-    """Configuration for a small HMM experiment (4 states, 3 outputs)"""
     HMM = {
         "states": 4,
         "outputs": 3,
@@ -150,7 +146,6 @@ class HMMFour(DefaultConfig):
     }
 
 class HMMFive(DefaultConfig):
-    """Configuration for a small HMM experiment (5 states, 3 outputs)"""
     HMM = {
         "states": 5,
         "outputs": 3,

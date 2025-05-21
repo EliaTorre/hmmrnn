@@ -8,17 +8,8 @@ from scripts.reverse import Reverse
 import scripts.config
 
 class Manager:
-    """
-    Class for managing experiment execution, data handling, and result storage.
-    """
+    """Class for managing experiment execution, data handling, and result storage."""
     def __init__(self, config_dict=None, config_name=None):
-        """
-        Initialize the experiment manager.
-        
-        Args:
-            config (dict, optional): Experiment configuration dict
-            config_name (str, optional): Name of a configuration class in CONFIG module
-        """
         if config_name and not config_dict:
             # Load config from CONFIG module
             if hasattr(scripts.config, config_name):
@@ -84,12 +75,7 @@ class Manager:
         print(f"Configuration saved to {config_path} and {json_path}")
         
     def load_config(self, path):
-        """
-        Load a configuration from a file.
-        
-        Args:
-            path (str): Path to the configuration file
-        """
+        """Load a configuration from a file."""
         path = Path(path)
         if path.suffix == '.json':
             with open(path, "r") as f:
@@ -100,9 +86,7 @@ class Manager:
         print(f"Configuration loaded from {path}")
     
     def clear_gpu_memory(self):
-        """
-        Clear GPU memory to prevent memory leaks between experiments.
-        """
+        """Clear GPU memory to prevent memory overload between experiments."""
         # Force garbage collection
         import gc
         gc.collect()
@@ -113,15 +97,7 @@ class Manager:
             print("GPU memory cleared")
     
     def run_training(self, verbose=False):
-        """
-        Train an RNN model on HMM data.
-        
-        Args:
-            verbose (bool): Whether to print detailed progress
-            
-        Returns:
-            tuple: (hmm, rnn, data_splits)
-        """
+        """Train an RNN model on HMM data."""
         print("Starting RNN training...")
         
         # Create HMM and RNN models
@@ -221,16 +197,7 @@ class Manager:
         return hmm, rnn, data_splits
     
     def run_tests(self, hmm=None, rnn=None):
-        """
-        Run tests on the trained model.
-        
-        Args:
-            hmm (HMM, optional): HMM model
-            rnn (RNN, optional): RNN model
-            
-        Returns:
-            dict: Test results
-        """
+        """Run tests on the trained model."""
         print("Running model tests...")
         
         # If models are not provided, create them
@@ -292,15 +259,7 @@ class Manager:
         return test_results
     
     def run_reverse(self, rnn=None):
-        """
-        Run reverse-engineering analysis on the trained model.
-        
-        Args:
-            rnn (RNN, optional): RNN model
-            
-        Returns:
-            dict: Analysis results
-        """
+        """Run reverse-engineering analysis on the trained model."""
         print("Running reverse-engineering analysis...")
         
         # If rnn is not provided, load it
@@ -355,15 +314,7 @@ class Manager:
         return pca_results
     
     def run_experiment(self, verbose=False):
-        """
-        Run the complete experiment pipeline.
-        
-        Args:
-            verbose (bool): Whether to print detailed progress
-            
-        Returns:
-            dict: Dictionary with experiment results
-        """
+        """Run the complete experiment pipeline."""
         # Record start time
         start_time = datetime.datetime.now()
         print(f"Starting experiment at {start_time}")
@@ -437,16 +388,7 @@ class Manager:
         return results
     
     def run_multiple_experiments(self, config_names, verbose=False):
-        """
-        Run multiple experiments with different configurations.
-        
-        Args:
-            config_names (list): List of configuration class names from CONFIG module
-            verbose (bool): Whether to print detailed progress
-            
-        Returns:
-            dict: Dictionary with summary of all experiments
-        """
+        """Run multiple experiments with different configurations."""
         # Save the current configuration and timestamp
         original_config = self.config
         original_config_name = self.config_name
@@ -533,17 +475,7 @@ class Manager:
         return all_results
 
     def run_training_evo(self, verbose=False):
-        """
-        Train an RNN model on HMM data, saving intermediate models every epochs.
-        Tests and plots are generated only for the final model. Intermediate models are stored in a directory
-        with the timestamp. Returns a results dictionary.
-        
-        Args:
-            verbose (bool): Whether to print detailed progress
-            
-        Returns:
-            dict: Dictionary with experiment results
-        """
+        """Train an RNN model on HMM data, saving intermediate models every epochs. Tests and plots are generated only for the final model."""
         # Record start time
         start_time = datetime.datetime.now()
         print(f"Starting RNN training with evolution saving at {start_time}")

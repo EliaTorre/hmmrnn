@@ -11,9 +11,7 @@ from scripts.mechint import load_model
 from scripts.sinkhorn import SinkhornSolver
 
 def get_model_paths(structured=False, with_config=False) -> Any:
-    """
-    Extract model paths from the grid search experiment directory.
-    """
+    """Extract model paths from the grid search experiment directory."""
     base_dir = "TrainedModels"
     
     # Check if the directory exists
@@ -145,9 +143,7 @@ def get_models_with_configs() -> List[Tuple[str, Dict]]:
     return get_flat_model_list(with_config=True)
 
 def compare_hmm_rnn_transition_matrices():
-    """
-    Compare HMM and RNN models by calculating transition matrices and their squared differences.
-    """
+    """Compare HMM and RNN models by calculating transition matrices and their squared differences."""
     # Get all models with their configurations
     models_with_configs = get_models_with_configs()
     
@@ -260,9 +256,7 @@ def compare_hmm_rnn_transition_matrices():
     return results
 
 def calculate_transition_matrix(sequences, num_outputs):
-    """
-    Calculate transition matrix between states.
-    """
+    """Calculate transition matrix between states."""
     # Convert sequences to numpy if they're torch tensors
     if isinstance(sequences, torch.Tensor):
         sequences = sequences.cpu().numpy()
@@ -289,9 +283,7 @@ def calculate_transition_matrix(sequences, num_outputs):
     return trans_matrix
 
 def plot_transition_matrix_differences(results):
-    """
-    Create a grid of plots showing the averaged squared difference matrices.
-    """
+    """Create a grid of plots showing the averaged squared difference matrices."""
     model_types = ["Two", "Three", "Four", "Five"]
     hidden_sizes = ["hidden_50", "hidden_150", "hidden_200"]
     input_sizes = ["input_1", "input_10", "input_100", "input_200"]
@@ -367,9 +359,7 @@ def plot_transition_matrix_differences(results):
         plt.close(fig)
 
 def compare_hmm_rnn_euclidean_distances():
-    """
-    Compare HMM and RNN models by calculating Euclidean distances between matched sequences.
-    """
+    """Compare HMM and RNN models by calculating Euclidean distances between matched sequences."""
     # Get all models with their configurations
     models_with_configs = get_models_with_configs()
     
@@ -527,12 +517,7 @@ def compare_hmm_rnn_euclidean_distances():
     return results
 
 def plot_euclidean_distances(results):
-    """
-    Create plots showing the Euclidean distances for different configurations.
-    
-    Args:
-        results: Dictionary containing the averaged Euclidean distances
-    """
+    """Create plots showing the Euclidean distances for different configurations."""
     model_types = ["Two", "Three", "Four", "Five"]
     hidden_sizes = ["hidden_50", "hidden_150", "hidden_200"]
     input_sizes = ["input_1", "input_10", "input_100", "input_200"]

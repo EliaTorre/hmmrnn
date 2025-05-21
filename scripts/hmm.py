@@ -4,9 +4,7 @@ import torch.nn.functional as F
 from hmmlearn.hmm import CategoricalHMM
 
 class HMM:
-    """
-    Class for generating and managing Hidden Markov Model sequences.
-    """
+    """Class for generating and managing Hidden Markov Model sequences."""
     def __init__(self, states, outputs, stay_prob=0.95, target_prob=0.05, 
              transition_method='target_prob', emission_method='linear',
              custom_transition_matrix=None, custom_emission_matrix=None):
@@ -114,9 +112,7 @@ class HMM:
             raise ValueError("Invalid method. Choose 'linear' or 'gaussian'.")
     
     def gen_seq(self, num_seq, seq_len):
-        """
-        Generate sequences from the HMM.
-        """
+        """Generate sequences from the HMM."""
         model = CategoricalHMM(n_components=self.states)
         model.startprob_ = self.start_probabilities
         model.transmat_ = self.transition_matrix
@@ -135,9 +131,7 @@ class HMM:
         return one_hot_sequences, sampled_states
     
     def split_data(self, one_hot_sequences, sampled_states, train_ratio=1/3, val_ratio=1/3):
-        """
-        Split the generated data into training, validation, and test sets.
-        """
+        """Split the generated data into training, validation, and test sets."""
         num_seq = one_hot_sequences.shape[0]
         train_end = int(num_seq * train_ratio)
         val_end = train_end + int(num_seq * val_ratio)
