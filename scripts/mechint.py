@@ -200,9 +200,7 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     plt.show()
 
 def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=[83, 59, 6, 28, 72, 114], n_steps=1000, device=None):
-    """
-    Simulate RNN trajectories and plot the activities of specified neurons, given a model path.
-    """
+    """Simulate RNN trajectories and plot the activities of specified neurons, given a model path."""
     # Set device
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -297,12 +295,11 @@ def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=
     plt.show()
 
 def relu(x):
-    """ReLU activation function."""
     return np.maximum(0, x)
 
 def forward(Wr, Wn, h0, u_vec, ret_intermediate=False):
+    # Store intermediate states
     if ret_intermediate:
-        # Store intermediate states
         h_intermediate = [h0.copy()]
     for u in u_vec:
         h0 = relu(Wr @ h0 + Wn @ u)
@@ -313,7 +310,6 @@ def forward(Wr, Wn, h0, u_vec, ret_intermediate=False):
     return h0
 
 def mobius_transform(z):
-    """Mobius transformation"""
     return (z-1)/(z+1)
 
 def jacobian_inj(W_r, h, W_n, n, ret_D=False, c=None, mu=1, cn=None, mun=1):
@@ -396,7 +392,7 @@ def run_injected(W_r, W_n, W_o, tc, h_nominal, noise_nominal, trajs=100, trajlen
         }
     return mu_data
 
-def compute_critical_eigs(mu_data, muvals, dt_transit=15, do_mobius=True, eps_real=0.1, eps_img=0.03):
+def compute_critical_eigs(mu_data, muvals, dt_transit=15, do_mobius=True, eps_real=0.1, eps_img=0.06):
     """Compute mean and std of critical complex eigenvalues."""
     critical_complex_eigs_mean = {}
     critical_complex_eigs_std = {}
@@ -486,8 +482,8 @@ def find_transition(W_r, W_n, W_o, sigma=1, back=25, skipped_trasit=4, t0=20, tf
 
     return firing_t, firing_trials_rate, h_track, o_track, noise_vec, tt, tc
 
-def locate_areas(W_r, W_n, W_o, visual_check=False, T=2000, thr_fr=6, verbose=False, max_retries=5):
-    """Locate transition and cluster points with robust handling of edge cases and retry mechanism."""
+def locate_areas(W_r, W_n, W_o, T=2000, thr_fr=6, verbose=False, max_retries=5):
+    """Locate transition and cluster points"""
     sigma = 1
     t0 = 20
     tau = 0.1
@@ -592,7 +588,6 @@ def noise_sensitivity(title, W_r, W_n, o_track, h_track, noise_vec, tk, tc, gamm
     sigmaj = 1
     
     noise_vec = np.concatenate([noise_vec, np.random.normal(0, sigmaj, [T, noise_vec.shape[1]])], axis=0)  # noise
-    beta_fac = 0 #0.1
 
     idx_vals = [tk, tc] 
     gamm_noise_vals = gamm_noise_vals
@@ -727,13 +722,7 @@ def noise_sensitivity(title, W_r, W_n, o_track, h_track, noise_vec, tk, tc, gamm
     plt.show()
 
 def weight_matrices(W_r):
-    """
-    Plot weight matrices for kick neurons and integrating populations.
-    
-    Parameters:
-    W_r : numpy.ndarray
-        Weight matrix to be visualized
-    """
+    """Plot weight matrices for kick neurons and integrating populations."""
     # Create figure with three subplots
     fig, axs = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
     
@@ -748,16 +737,16 @@ def weight_matrices(W_r):
     
     # Calculate top-k integrating neurons
     topk = 70
-    g1 = W_r[[83, 6, 59], :].mean(axis=0)
-    g2 = W_r[[114, 72, 28], :].mean(axis=0)
-    sortmap = np.argsort(g1 * g2)
-    
+    g1 = W_r[vec[:3],:].mean(axis=0)
+    g2 = W_r[vec[3:],:].mean(axis=0)
+
+    sortmap = np.argsort(g1*g2)
+
     g1 = g1[sortmap][:topk]
     g2 = g2[sortmap][:topk]
     sortmap2 = np.argsort(g1)
-    g12 = g1[sortmap2]
-    g22 = g2[sortmap2]
-    final_map = sortmap[sortmap2[sortmap2 < topk]]
+    final_map = sortmap[sortmap2[sortmap2<topk]]
+
     
     # Plot 2: Kick Neurons ⇄ Integrating Populations
     s1 = axs[1].imshow(W_r[vec, :][:, final_map], cmap='bwr', aspect='auto')
@@ -780,9 +769,7 @@ def weight_matrices(W_r):
     plt.show()
 
 def mean_activities(model_path, T=300, kick_group1=[83,6,59], kick_group2=[114,72,28], topk=70, sigmaj=1, TMaxx=200):
-    """
-    Plot the mean activities of kick neurons and integrating populations over time.
-    """
+    """Plot the mean activities of kick neurons and integrating populations over time."""
     # Load weights
     W_r, W_n, W_o = load_weights(model_path)
 
@@ -863,24 +850,7 @@ def mean_activities(model_path, T=300, kick_group1=[83,6,59], kick_group2=[114,7
     plt.show()
 
 def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_eps=0.1, maxp=700, trlen=700, clip_value=15, purple_epoch=None):
-    """
-    Generate a 3D PCA plot showing state space evolution for specified epochs.
-    
-    Parameters:
-    - folder_path: str, path to folder containing model_epoch_*.pth files
-    - selected_epochs_list: list of int, specific epochs to plot
-    - T: int, number of simulation time steps
-    - t0: int, number of warmup time steps
-    - sigmaj: float, noise standard deviation
-    - h_eps: float, initial hidden state perturbation scale
-    - maxp: int, maximum points to plot per epoch
-    - trlen: int, length of trajectory to plot
-    - clip_value: float, value to clip PCA coordinates
-    - purple_epoch: int or None, epoch to plot in purple (default: None)
-    
-    Returns:
-    - Displays a 3D matplotlib plot
-    """
+    """Generate a 3D PCA plot showing state space evolution for specified epochs."""
     # Get and sort model files
     model_files = sorted(
         [f for f in os.listdir(folder_path) if f.startswith('model_epoch_') and f.endswith('.pth')],
@@ -1008,14 +978,280 @@ def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_
     plt.title('PCA of Latent Dynamics Across Epochs')
     plt.show()
 
-def ablation(weights_path, ablated_neurons=[83, 59, 6], verbose=False):
-    # other kick neurons triplet: [28, 72, 114]
-    """Generate the final 2x3 plot from weights file."""
-    # Load weights
-    W_r, W_n, W_o = load_weights(weights_path)
+def expected_deltah(W_r, W_n, h0=None, trials=100, t0=10, tf=50, sigma=1, h_eps=0.1, silent=False):
+    """Compute the expected first-order and second-order perturbation terms for an RNN with ReLU activation."""
+
+    def compute_delta_h2(W_r, W_n, h0, sigma, t, Mtk_corr=False):
+        """Compute the second-order perturbation term delta_h_t^{(2)} for an RNN with ReLU activation."""
+        # Dimensions
+        n = W_r.shape[0]  # Hidden state dimension
+        r = W_n.shape[1]  # Noise dimension
+        
+        # Step 1: Compute the unperturbed trajectory
+        h_unperturbed = [h0.copy()]
+        for k in range(1, t):
+            z_k = W_r @ h_unperturbed[-1]  # Pre-activation
+            h_k = relu(z_k)                # Post-activation
+            h_unperturbed.append(h_k)
+        
+        # Step 2: Compute Jacobians for the unperturbed trajectory
+        # For ReLU, Jacobian is diagonal with 1 where z_k > 0, 0 otherwise
+        D_phi = [np.diag((W_r @ h > 0).astype(float)) for h in h_unperturbed]
+        
+        # Step 3: Generate noise
+        omega = np.random.normal(0, sigma, (t, r))
+        
+        # Step 4: Compute first-order perturbations
+        delta_h1 = np.zeros((t, n))
+        Mtk_l = []
+        for s in range(t):
+            # Compute propagation matrix M_{t,s}
+            M_t_s = np.eye(n)
+            for k in range(s, t):
+                M_t_s = D_phi[k] @ W_r @ M_t_s
+            if Mtk_corr:
+                Mtk_l.append(M_t_s)
+            delta_h1[s] = M_t_s @ W_n @ omega[s]
+        
+        # Step 5: Compute second-order term
+        delta_h2 = np.zeros(n)
+        for u in range(t):
+            z_u = W_r @ h_unperturbed[u]  # Pre-activation at step u
+            dhu = delta_h1[u]
+            dv2 = (dhu)**2
+            if Mtk_corr:
+                Mtu = Mtk_l[u]
+                dv2 = (-Mtu) @ dv2
+            delta_h2 += 0.5* np.einsum("i,i->i", dv2, (z_u < 0))
+
+        return delta_h2, delta_h1[0]
+
+    # PERTURBATION VECS
+    delta_h1_l = []
+    delta_h2_l = []
+    for ex in range(trials):
+        if not silent:
+            print(f"{ex/trials*100:.2f}%    ", end="\r")
+        if h0 is None:
+            h0 = (np.random.randn(W_r.shape[0])*2-1)*h_eps
+        h0j = h0+(np.random.randn(W_r.shape[0])*2-1)*h_eps 
+        for t in range(1, t0):
+            noise = np.random.normal(0, sigma, W_n.shape[1])
+            h0j = forward(W_r, W_n, h0j, [noise]) 
+
+        # Compute the second-order noise vector
+        delta_h2, delta_h1 = compute_delta_h2(W_r, W_n, h0j, sigma, tf)
+        delta_h1_l.append(delta_h1)
+        delta_h2_l.append(delta_h2)
+
+    return np.array(delta_h2_l).mean(axis=0), np.array(delta_h1_l).mean(axis=0)
+    #return np.array(delta_h2_l), np.array(delta_h1_l)
+
+def second_order(folder_path, max_epochs=250, ep_rate=10, threshold=0.05, bifep=None, silent=True):
     
-    # Locate areas
-    h_nom, o_track, noise_vec_nom, tt, tk, tc = locate_areas(W_r, W_n, W_o, visual_check=False, verbose=verbose)
+    def Hopf_eigs_stat(Jl, do_mobius=True, t0=0, eps_real=0.1, eps_img=0.05):
+        compl_stat = []
+        unstable_stat = []
+        for Jt in Jl[t0:]:
+            eigvals = np.linalg.eigvals(Jt)
+            unstable_stat += [(np.linalg.norm(np.stack([np.real(eigvals), np.imag(eigvals)], axis=-1), axis=-1)>1).sum()]    # counts just 1 per complex pair
+            if do_mobius:
+                # Apply Mobius transformation to eigenvalues
+                eigvals = mobius_transform(eigvals)
+            compl_stat += [np.logical_and(np.abs(eigvals.real)<eps_real, eigvals.imag>eps_img).sum()]    # counts just 1 per complex pair     
+        return np.max(compl_stat), np.mean(compl_stat), np.std(compl_stat), np.max(unstable_stat), np.mean(unstable_stat), np.std(unstable_stat)
+
+    def mobius_transform(z):
+        return (z-1)/(z+1)
+    
+    # Get and sort model files
+    model_files = sorted(
+        [f for f in os.listdir(folder_path) if f.startswith('model_epoch_') and f.endswith('.pth')],
+        key=lambda x: int(x.split('_')[-1].split('.')[0])
+    )
+    
+    all_epochs = [int(fname.split('_')[-1].split('.')[0]) for fname in model_files]
+    epochs_to_plot = [i for i in range(1, max_epochs+1, ep_rate)]
+    
+    # Find indices for epochs_to_plot
+    selected_indices = []
+    selected_epochs = []
+    for epoch in epochs_to_plot:
+        if epoch in all_epochs:
+            idx = all_epochs.index(epoch)
+            selected_indices.append(idx)
+            selected_epochs.append(epoch)
+        else:
+            print(f"Warning: Epoch {epoch} not found in model files.")
+    
+    # Sort by epoch number
+    if selected_epochs:
+        sorted_pairs = sorted(zip(selected_indices, selected_epochs), key=lambda x: x[1])
+        selected_indices, selected_epochs = zip(*sorted_pairs)
+        selected_indices = list(selected_indices)
+        selected_epochs = list(selected_epochs)
+    else:
+        print("No epochs to plot.")
+        return
+    
+    # Load first model to determine dimensions
+    W_r, W_n, W_o = load_weights(os.path.join(folder_path, model_files[0]))
+    state_dim = W_r.shape[0]
+    noise_dim = W_n.shape[1]
+
+    T = 5000
+    t0 = 10
+    tdh2 = 10 
+    trials = 20 #100
+    h_eps = .05
+    sigmaj = 1
+    stepJac = False
+
+    noise_warmup = np.random.normal(0, sigmaj, [t0, noise_dim])
+    noise_vec_j = np.random.normal(0, sigmaj, [T, noise_dim])
+    h0j = (np.random.randn(state_dim)*2-1)*0.1 
+
+    # Define custom colormap for o_track (0: dark green, 2: dark red)
+    colors = {0: 'darkgreen', 1:"royalblue", 2: 'darkred'}
+    cmap = mcolors.ListedColormap([colors[0], colors[1], colors[2]])
+
+    vec_dh2_l = []
+    vec_dh1_l = []
+    compl_stats_max = []
+    compl_stats_mean = []
+    compl_stats_std = []
+    unst_stats_max = []
+    unst_stats_mean = []
+    unst_stats_std = []
+    avg_res_time = []
+    avg_firing_rate = []
+    pca_comps = []
+    pca_points = []
+    out_t = []
+    for k, idx in enumerate(selected_indices):
+        model_file = os.path.join(folder_path, model_files[idx])
+        W_r, W_n, W_o = load_weights(model_file)
+
+        if not silent:
+            print(f"Epoch {idx}  -  [{k/len(selected_indices)*100:.2f}%]    ", end="\r")  
+            
+        # WARMUP
+        for t in range(t0):
+            noisej = noise_warmup[t]
+            h0j = forward(W_r, W_n, h0j, [noisej])  # Forward pass
+
+        # DYNAMICS
+        hj_mu = forward_inj(W_r, W_n, h0j, noise_vec_j, ret_intermediate=True)  
+        hj_mu = np.array(hj_mu)
+        out = (np.einsum("ij, bj -> bi", W_o, hj_mu)).argmax(axis=-1)
+        pca_hj = PCA(n_components=2)
+        pca_hj.fit(hj_mu)
+        pca_comps.append(pca_hj.components_)
+        pca_points.append(hj_mu)
+        out_t.append(out)
+
+        # PERTURBATION
+        exdh2_j, exdh1_j = expected_deltah(W_r, W_n, h0j, trials=trials, t0=t0, tf=tdh2, sigma=sigmaj, h_eps=h_eps, silent=True)
+        vec_dh2_l.append(exdh2_j)
+        vec_dh1_l.append(exdh1_j)
+
+        # JACOBIANS
+        Jt_l = []
+        for t in range(len(hj_mu)-1):
+            Jt_ = jacobian_inj(W_r, hj_mu[t+1], W_n, noise_vec_j[t], ret_D=False)
+            Jt_l.append(Jt_)
+        Jt_l = np.array(Jt_l)
+
+        # HOPF EIGENVALUES
+        cms_max, cms_m, cms_s, us_max, us_m, us_s = Hopf_eigs_stat(Jt_l, do_mobius=True, t0=t0, eps_real=0.1, eps_img=0.05)
+        compl_stats_max.append(cms_max)
+        compl_stats_mean.append(cms_m)
+        compl_stats_std.append(cms_s)
+        unst_stats_max.append(us_max)
+        unst_stats_mean.append(us_m)
+        unst_stats_std.append(us_s)
+
+        try:
+            a = np.where(np.abs(np.diff(out>0)))[0]
+            tr = a[1:][np.argmax(np.diff(a[1:]))]-3
+            avg_res = np.diff(np.where(np.diff(out)!=0)[0:]).mean()
+            avg_res_time.append(avg_res)
+            avg_firing_rate.append((1/np.diff(np.where(np.diff(out)!=0)[0:]).flatten()).mean())
+        except:
+            tr = T//2
+            avg_res_time.append(T)
+            avg_firing_rate.append(0)
+            
+    vec_dh2_l = np.array(vec_dh2_l)
+    vec_dh1_l = np.array(vec_dh1_l)
+    compl_stats_max = np.array(compl_stats_max)
+    compl_stats_mean = np.array(compl_stats_mean)
+    compl_stats_std = np.array(compl_stats_std)
+    avg_res_time = np.array(avg_res_time)
+    avg_firing_rate = np.array(avg_firing_rate)
+    pca_comps = np.array(pca_comps)
+    pca_points = np.array(pca_points)
+    unst_stats_max = np.array(unst_stats_max)
+    unst_stats_mean = np.array(unst_stats_mean)
+    unst_stats_std = np.array(unst_stats_std)
+    out_t = np.array(out_t)
+
+    if bifep is None:
+        bifep = np.where(np.abs(np.diff(compl_stats_mean))>0.02)[0][0]*ep_rate
+
+    font = {'size'   : 16}
+    matplotlib.rc('font', **font)
+
+    plt.figure(figsize=(20, 6))
+    plt.subplot(1, 3, 1)
+    plt.plot(np.arange(0, len(compl_stats_mean))*ep_rate, avg_firing_rate, color="darkorange")
+
+
+    plt.axhline(np.mean(avg_firing_rate[-6:]), color='red', lw=1.5, ls='--', label=f"converged TR")
+    plt.title(f"Average transition rate")
+    plt.xlabel("Epochs")
+    plt.ylabel("Transition rate")
+
+    plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--', label="bifurcation")
+    plt.legend()
+    plt.subplot(1, 3, 2)
+
+    plt.plot(np.arange(0, len(compl_stats_mean))*ep_rate, compl_stats_mean, label="complex", color="darkorange")
+    plt.plot(np.arange(0, len(unst_stats_mean))*ep_rate, unst_stats_mean, label="unstable", color="darkred")
+    plt.title("Complex and unstable eigenvalues")
+    plt.xlabel("Epochs")
+    plt.ylabel("Mean eignvalues count")
+    plt.legend()
+
+    plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--')
+
+    plt.subplot(1, 3, 3)
+    plt.title("Expected $dh^{(2)}$")
+    plt.imshow(np.sqrt(np.abs(vec_dh2_l)).T, aspect='auto', cmap='Reds', interpolation='nearest',extent=[0, vec_dh2_l.shape[1], vec_dh2_l.shape[0]*ep_rate, 0])
+
+    cmap = plt.cm.inferno
+    cmap.set_bad(color='white')  # Color for masked values (below threshold)
+    masked_data = np.ma.masked_where(np.sqrt(np.abs(vec_dh2_l)).T <= threshold, vec_dh2_l.T)
+    plt.imshow(masked_data, aspect='auto', cmap=cmap, interpolation='nearest',
+            extent=[0, vec_dh2_l.shape[0]*ep_rate, vec_dh2_l.shape[1], 0])
+
+    plt.colorbar(label='$\mathbb{E}[dh^{(2)}]$')
+
+    plt.yticks([])
+    plt.xlabel("Epochs")
+    plt.ylabel("Hidden units")
+    plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--')
+    plt.show()
+    
+
+def ablation(weights_path, group=0, verbose=False):
+    if group == 0:
+        ablated_neurons = [83, 59, 6]
+    elif group == 1:
+        ablated_neurons = [114, 72, 28]
+
+    W_r, W_n, W_o = load_weights(weights_path)
+    h_nom, o_track, noise_vec_nom, tt, tk, tc = locate_areas(W_r, W_n, W_o, verbose=verbose)
     
     # Parameters
     T = 1000
@@ -1034,10 +1270,24 @@ def ablation(weights_path, ablated_neurons=[83, 59, 6], verbose=False):
     # Noise projection
     c_noise = np.zeros(W_r.shape[0])
     cn_noise = np.zeros(W_r.shape[0])
-    mask = kprojected(W_r, ablated_neurons[0], top_k=65, reversed=True)
-    mask2 = kprojected(W_r, ablated_neurons[1], top_k=65, reversed=True)
-    mask3 = kprojected(W_r, ablated_neurons[2], top_k=65, reversed=True)
-    mask = (mask | mask2) | mask3
+    mask = np.zeros(W_r.shape[0]).astype(bool)
+    dpop_size = 140 # size of population 1 + population 2
+    g1 = W_r[[83,59,6],:].mean(axis=0)
+    g2 = W_r[[28,72,114],:].mean(axis=0)
+    sortmap = np.argsort(g1*g2)
+    g1 = g1[sortmap][:dpop_size]
+    g2 = g2[sortmap][:dpop_size]
+
+    if group==0:
+        sortmap2 = np.argsort(g1)
+        nz_vals = (g1>0).sum()
+    else:
+        sortmap2 = np.argsort(-g2)
+        nz_vals = (g2>0).sum()
+    final_map = sortmap[sortmap2[sortmap2<dpop_size]]
+    top_k = 83
+    top_k = min(top_k, nz_vals)
+    mask[final_map[:top_k]] = True
     cn_noise[np.where(mask)] = 1
     cn_noise[[28, 72, 114, 59, 6, 83]] = 0
     
@@ -1092,9 +1342,9 @@ def ablation(weights_path, ablated_neurons=[83, 59, 6], verbose=False):
     # Kick neurons
     axs[0, 0].set_title("Kick neurons")
     for k in range(min(max_trajs, len(mu_data_kick[mu0]["traj_l_pca"]))):
-        axs[0, 0].plot(mu_data_kick[1]["traj_l_pca"][k][:100, 0], mu_data_kick[1]["traj_l_pca"][k][:100, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
-        axs[0, 0].plot(mu_data_kick[mu0]["traj_l_pca"][k][:100, 0], mu_data_kick[mu0]["traj_l_pca"][k][:100, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
-        axs[0, 0].plot(mu_data_kick[muf]["traj_l_pca"][k][:100, 0], mu_data_kick[muf]["traj_l_pca"][k][:100, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
+        axs[0, 0].plot(mu_data_kick[1]["traj_l_pca"][k][:60, 0], mu_data_kick[1]["traj_l_pca"][k][:60, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
+        axs[0, 0].plot(mu_data_kick[mu0]["traj_l_pca"][k][:60, 0], mu_data_kick[mu0]["traj_l_pca"][k][:60, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
+        axs[0, 0].plot(mu_data_kick[muf]["traj_l_pca"][k][:60, 0], mu_data_kick[muf]["traj_l_pca"][k][:60, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
     axs[0, 0].scatter(mu_data_kick[mu0]["traj_l_pca"][0][0, 0], mu_data_kick[mu0]["traj_l_pca"][0][0, 1], c='black', alpha=1, marker="*", s=100)
     axs[0, 0].set_xlabel("PC1")
     axs[0, 0].set_ylabel("PC2")
@@ -1115,9 +1365,9 @@ def ablation(weights_path, ablated_neurons=[83, 59, 6], verbose=False):
     # Noise projection
     axs[0, 1].set_title("Noise projection")
     for k in range(min(max_trajs, len(mu_data_noise[mu0]["traj_l_pca"]))):
-        axs[0, 1].plot(mu_data_kick[1]["traj_l_pca"][k][:100, 0], mu_data_kick[1]["traj_l_pca"][k][:100, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
-        axs[0, 1].plot(mu_data_noise[mu0]["traj_l_pca"][k][:100, 0], mu_data_noise[mu0]["traj_l_pca"][k][:100, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
-        axs[0, 1].plot(mu_data_noise[muf]["traj_l_pca"][k][:100, 0], mu_data_noise[muf]["traj_l_pca"][k][:100, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
+        axs[0, 1].plot(mu_data_kick[1]["traj_l_pca"][k][:60, 0], mu_data_kick[1]["traj_l_pca"][k][:60, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
+        axs[0, 1].plot(mu_data_noise[mu0]["traj_l_pca"][k][:60, 0], mu_data_noise[mu0]["traj_l_pca"][k][:60, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
+        axs[0, 1].plot(mu_data_noise[muf]["traj_l_pca"][k][:60, 0], mu_data_noise[muf]["traj_l_pca"][k][:60, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
     axs[0, 1].scatter(mu_data_noise[mu0]["traj_l_pca"][0][0, 0], mu_data_noise[mu0]["traj_l_pca"][0][0, 1], c='black', alpha=1, marker="*", s=100)
     axs[0, 1].set_xlabel("PC1")
     axs[0, 1].set_xticks([])
@@ -1136,9 +1386,9 @@ def ablation(weights_path, ablated_neurons=[83, 59, 6], verbose=False):
     # Control
     axs[0, 2].set_title("Control")
     for k in range(min(max_trajs, len(mu_data_cnt[mu0]["traj_l_pca"]))):
-        axs[0, 2].plot(mu_data_kick[1]["traj_l_pca"][k][:80, 0], mu_data_kick[1]["traj_l_pca"][k][:80, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
-        axs[0, 2].plot(mu_data_cnt[mu0]["traj_l_pca"][k][:80, 0], mu_data_cnt[mu0]["traj_l_pca"][k][:80, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
-        axs[0, 2].plot(mu_data_cnt[muf]["traj_l_pca"][k][:80, 0], mu_data_cnt[muf]["traj_l_pca"][k][:80, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
+        axs[0, 2].plot(mu_data_kick[1]["traj_l_pca"][k][:60, 0], mu_data_kick[1]["traj_l_pca"][k][:60, 1], c="gray", alpha=a_nomi, label="nominal" if k == 0 else "")
+        axs[0, 2].plot(mu_data_cnt[mu0]["traj_l_pca"][k][:60, 0], mu_data_cnt[mu0]["traj_l_pca"][k][:60, 1], color="darkblue", alpha=a_inhi, label="inhibition" if k == 0 else "")
+        axs[0, 2].plot(mu_data_cnt[muf]["traj_l_pca"][k][:60, 0], mu_data_cnt[muf]["traj_l_pca"][k][:60, 1], color="darkred", alpha=a_exci, label="excitation" if k == 0 else "")
     axs[0, 2].scatter(mu_data_cnt[mu0]["traj_l_pca"][0][0, 0], mu_data_cnt[mu0]["traj_l_pca"][0][0, 1], c='black', alpha=1, marker="*", s=100)
     axs[0, 2].set_xlabel("PC1")
     axs[0, 2].set_xticks([])
