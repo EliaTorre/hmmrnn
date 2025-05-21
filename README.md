@@ -1,6 +1,6 @@
 # Mechanistic Interpretability of RNNs emulating Hidden Markov Models
 
-![Header image](header.png)
+![Header image](pipe.svg)
 
 This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). The project focuses on understanding the internal representations and dynamics of RNNs at the single-neuron level.
 
@@ -87,7 +87,7 @@ Implements the Test class for evaluating and comparing HMM and RNN models. Featu
 
 ### reverse.py
 
-Implements the Reverse class for reverse engineering analysis of trained RNNs. Features:
+Implements the Reverse class for reverse engineering analysis of RNNs for quick visualization after training. Features:
 - Principal Component Analysis (PCA) of hidden states
 - 2D and 3D visualization of latent trajectories
 - Analysis of explained variance
@@ -103,7 +103,7 @@ Implements the Manager class for experiment execution, data handling, and result
 
 ### metrics.py
 
-Implements functions for comparing HMM and RNN models using various metrics:
+Implements functions for plotting comparing HMM and RNN models using various metrics:
 - Transition matrix calculation and plotting
 - Euclidean distance calculation and plotting
 - Grid plots for comparing different model configurations 

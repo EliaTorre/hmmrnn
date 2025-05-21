@@ -298,8 +298,8 @@ def relu(x):
     return np.maximum(0, x)
 
 def forward(Wr, Wn, h0, u_vec, ret_intermediate=False):
-    # Store intermediate states
     if ret_intermediate:
+        # Store intermediate states
         h_intermediate = [h0.copy()]
     for u in u_vec:
         h0 = relu(Wr @ h0 + Wn @ u)
@@ -312,31 +312,39 @@ def forward(Wr, Wn, h0, u_vec, ret_intermediate=False):
 def mobius_transform(z):
     return (z-1)/(z+1)
 
-def jacobian_inj(W_r, h, W_n, n, ret_D=False, c=None, mu=1, cn=None, mun=1):
-    """Compute the Jacobian with injection."""
+def jacobian_inj(W_r, h, W_n, n, ret_D=False, c=None, mu=1, c2=None, mu2=1, cn=None, mun=1, stepJac=False):
+    """Compute the Jacobian of ReLU activation."""
     ct = np.ones(W_r.shape[0])
     if c is not None:
-        ct[c!=0] *= c[c!=0]*mu
+        ct[c!=0] *= c[c>0]*mu
+    ct2 = np.ones(W_r.shape[0])
+    if c2 is not None:
+        ct2[c2!=0] *= c2[c2>0]*mu2
     ctn = np.ones(W_r.shape[0])
     if cn is not None:
         ctn[cn!=0] *= cn[cn!=0]*mun
-    D = np.diag(((W_r @ h * ct + (W_n @ n) * ctn) > 0).astype(float))
+
+    D = np.diag(((W_r@h*ct + (W_n@n)*ctn) > 0).astype(float))*ct2
     if ret_D:
-        return D @ W_r * ct, D
-    return D @ W_r * ct
+        return D@W_r*ct - (np.eye(D.shape[0]) if stepJac else 0), D
+    else:
+        return D@W_r*ct - (np.eye(D.shape[0]) if stepJac else 0)
+
 
 def forward_inj(Wr, Wn, h0, u_vec, ret_intermediate=False, c=None, mu=1, cn=None, mun=1):
-    """Forward pass with injection."""
     ct = np.ones(Wr.shape[0])
     if c is not None:
         ct[c!=0] *= c[c!=0]*mu
+
     ctn = np.ones(Wr.shape[0])
     if cn is not None:
         ctn[cn!=0] *= cn[cn!=0]*mun
+
     if ret_intermediate:
+        # Store intermediate states
         h_intermediate = [h0.copy()]
     for u in u_vec:
-        h0 = relu((Wr @ h0)*ct + (Wn @ u)*ctn)
+        h0 = relu((Wr @ h0)*ct + (Wn@u)*ctn)
         if ret_intermediate:
             h_intermediate.append(h0.copy())
     if ret_intermediate:
@@ -344,78 +352,108 @@ def forward_inj(Wr, Wn, h0, u_vec, ret_intermediate=False, c=None, mu=1, cn=None
     return h0
 
 def kprojected(W_r, id, top_k=10, reversed=True):
-    """Project top-k neurons based on weights."""
     mask = np.zeros(W_r.shape[0]).astype(bool)
-    idx = W_r[id, :].argsort()
+    idx = W_r[id,:].argsort()
     if reversed:
         idx = idx[::-1]
     mask[idx[:top_k]] = True
     return mask
 
-def run_injected(W_r, W_n, W_o, tc, h_nominal, noise_nominal, trajs=100, trajlen=100, muvals=[0, 1, 2], c=None, cn=None, T=1000, sigmaj=1, gamm_noise=0.5):
-    """Run simulations with injected interventions."""
-    h0j = (np.random.randn(W_r.shape[0]) * 2 - 1) * 0.1
-    noise_vec_j = np.random.normal(0, sigmaj, [T, W_n.shape[1]])
+def run_injected(W_r, W_n, W_o, tc, h_nominal, noise_nominal, trajs=100, trajlen=100, muvals=[0,1,2], c=None, cn=None, h0j=None, T=1000, sigmaj=1, gamm_noise=0.5):
+    if h0j is None:
+        h0j = (np.random.randn(W_r.shape[0])*2-1)*0.1 # Random initial hidden state
+    noise_vec_j = np.random.normal(0, sigmaj, [T,W_n.shape[1]])
+
+    # Additional noise for trajectories (if gamma>0)
     noise_traj = np.random.normal(0, sigmaj, [trajs, trajlen, W_n.shape[1]])
-    spwn = tc - 1
-    
+    spwn = tc-1
     mu_data = {}
     for i, mu in enumerate(muvals):
+        print(f"{i/len(muvals)*100:.2f}%    ", end="\r")
+
         h_istj_mu = [h0j.copy()]
         hj_mu = h_istj_mu[0]
         oj_mu = []
         J_mu_l = []
+        Dr_mu_l = []
         traj_l = []
-        
+
+        # TO TRACK STATISTICS
         for t in range(T):
-            noisej = noise_vec_j[t]
-            hj_mu = forward_inj(W_r, W_n, hj_mu, [noisej], c=c, mu=mu, cn=cn, mun=mu)
+            noisej = noise_vec_j[t]  # noise
+            hj_mu = forward_inj(W_r, W_n, hj_mu, [noisej], c=c, mu=mu, cn=cn, mun=mu)  # Forward pass
             h_istj_mu.append(hj_mu)
-            oj_mu.append((W_o @ hj_mu).argmax())
-            Jt_, _ = jacobian_inj(W_r, hj_mu, W_n, noisej, ret_D=True, c=c, mu=mu, cn=cn, mun=mu)
+            oj = W_o @ hj_mu  # Output
+            oj_mu.append(oj.argmax())  # Store output
+            # Jacobian w injection
+            Jt_, Dt_ = jacobian_inj(W_r, hj_mu, W_n, noisej, ret_D=True, c=c, mu=mu, cn=cn, mun=mu, stepJac=False)
             J_mu_l.append(Jt_)
-        
+            #Dr_mu_l.append(Dt_)
+
+        # TO TRACK TRAJECTORIES FOR VISUALIZATION
         for j in range(trajs):
             h0t = h_nominal[spwn].copy()
             traj_vec = [h0t.copy()]
             for t in range(trajlen):
-                noisej = noise_nominal[spwn + t] * (1 - gamm_noise) + gamm_noise * noise_traj[j, t]
-                h0t = forward_inj(W_r, W_n, h0t, [noisej], c=c, mu=mu, cn=cn, mun=mu)
-                traj_vec.append(h0t)
-            traj_l.append(np.array(traj_vec))
-        
+                noisej = noise_nominal[spwn+t]*(1-gamm_noise) + gamm_noise*noise_traj[j,t]   
+                h0t = forward_inj(W_r, W_n, h0t, [noisej], c=c, mu=mu, cn=cn, mun=mu) 
+                traj_vec.append(h0t.copy())
+            traj_vec = np.array(traj_vec)
+            traj_l.append(traj_vec)
+
+            
+        h_istj_mu = np.array(h_istj_mu)
+        oj_mu = np.array(oj_mu)
+        traj_l = np.array(traj_l)
+
         mu_data[mu] = {
-            'h_istj_mu': np.array(h_istj_mu),
-            'oj_mu': np.array(oj_mu),
-            'traj_l': np.array(traj_l),
-            'J_mu_l': J_mu_l
+            'h_istj_mu': h_istj_mu,
+            'oj_mu': oj_mu,
+            'traj_l': traj_l,
+            'J_mu_l': J_mu_l,
+            'Dr_mu_l': Dr_mu_l
         }
+
     return mu_data
 
-def compute_critical_eigs(mu_data, muvals, dt_transit=15, do_mobius=True, eps_real=0.1, eps_img=0.06):
-    """Compute mean and std of critical complex eigenvalues."""
-    critical_complex_eigs_mean = {}
-    critical_complex_eigs_std = {}
+def compute_CE(mu_data_noise, muvals):
+    do_mobius = True
+    dt_transit = 15 #50 #20 
+    critical_complex_eigs_mean_noise = {}
+    critical_complex_eigs_std_noise = {}
+    eps_real = 0.1#1
+    eps_img = 0.06
     for muv in muvals:
-        a = np.where(np.abs(np.diff(mu_data[muv]["oj_mu"]) > 0))[0]
-        if len(a) < 2:
-            a = np.where(np.abs(np.diff(mu_data[1]["oj_mu"]) > 0))[0]
+        
+        a = np.where(np.abs(np.diff(mu_data_noise[muv]["oj_mu"])>0))[0]
+        if len(a)<2:
+            a = np.where(np.abs(np.diff(mu_data_noise[1]["oj_mu"])>0))[0]
+
         comlstats = []
-        for k in range(len(a) - 1):
+        eigenvalues = []
+        num_transit = len(a) #4 #len(a)-2 
+        num_transit = min(max(1, num_transit), len(a))
+        skipped_trasit = 0
+        for k in range(num_transit-1):
             efdttr = dt_transit
+            if a[k+1]-a[k]<dt_transit:
+                pass
             eigenvalues = []
-            start_idx = max(0, a[k] - efdttr)
-            end_idx = min(len(mu_data[muv]["J_mu_l"]), a[k] + efdttr)
-            for J in mu_data[muv]["J_mu_l"][start_idx:end_idx]:
+                #for J in mu_data[muv]["J_mu_l"][a[k]:a[k+1]]:
+            for J in mu_data_noise[muv]["J_mu_l"][a[k]-efdttr:a[k]+efdttr]:
                 eigvals = np.linalg.eigvals(J)
                 eigenvalues.extend(eigvals)
             eigenvalues = np.array(eigenvalues)
             if do_mobius:
-                eigenvalues = (eigenvalues - 1) / (eigenvalues + 1)
-            comlstats.append(np.logical_and(np.abs(eigenvalues.real) < eps_real, eigenvalues.imag > eps_img).sum())
-        critical_complex_eigs_mean[muv] = np.mean(comlstats) if comlstats else 0
-        critical_complex_eigs_std[muv] = np.std(comlstats) if comlstats else 0
-    return critical_complex_eigs_mean, critical_complex_eigs_std
+                # Apply Mobius transformation to eigenvalues
+                eigenvalues = mobius_transform(eigenvalues)
+
+            comlstats.append(np.logical_and(np.abs(eigenvalues.real)<eps_real, eigenvalues.imag>eps_img).sum())    # counts just 1 per complex pair     
+
+        critical_complex_eigs_mean_noise[muv] = np.mean(comlstats)
+        critical_complex_eigs_std_noise[muv] = np.std(comlstats)
+
+    return critical_complex_eigs_mean_noise, critical_complex_eigs_std_noise
 
 
 def load_weights(path):
@@ -426,40 +464,54 @@ def load_weights(path):
     W_o = weights["fc.weight"].cpu().numpy()
     return W_r, W_n, W_o
 
-def find_transition(W_r, W_n, W_o, sigma=1, back=25, skipped_trasit=4, t0=20, tf=5, trials=20, dT=20, Tmin=200, T=2000, tau=0.5):
+def find_transition(W_r, W_n, W_o, sigma=1, back=25, h_track=None, noise_vec=None, skipped_trasit=4, t0=20, tf=5, trials=20, dT=20, Tmin=200, T=2000, tau=0.5, logit=None):
     hj = (np.random.randn(W_r.shape[0])*2-1)*0.1
     for t in range(t0):
         noisej = np.random.normal(0, sigma, W_n.shape[1])  # noise
         hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
     
-    skips = 0
-    ocurr = (W_o @ hj).argmax()
-    h_track = [hj.copy()]
-    o_track = [ocurr.copy()]
-    noise_vec = np.random.normal(0, sigma, [T, W_n.shape[1]])
-    pskip=0
-    for t in range(T):
-        noisej = noise_vec[t] # noise
-        hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
-        h_track.append(hj)
-        oj = (W_o @ hj).argmax()  # Output
-        o_track.append(oj.copy())
-    
-    noise_vec = np.concatenate([np.zeros([1, W_n.shape[1]]), noise_vec], axis=0)
-    h_track = np.array(h_track)
-    o_track = np.array(o_track)
+    if h_track is None or noise_vec is None:
+        ocurr = (W_o @ hj).argmax()
+        h_track = [hj.copy()]
+        o_track = [ocurr.copy()]
+        noise_vec = np.random.normal(0, sigma, [T, W_n.shape[1]])
+        for t in range(T):
+            noisej = noise_vec[t] # noise
+            hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
+            h_track.append(hj)
+            oj = (W_o @ hj).argmax()  # Output
+            o_track.append(oj.copy())
+        
+        noise_vec = np.concatenate([np.zeros([1, W_n.shape[1]]), noise_vec], axis=0)
+        h_track = np.array(h_track)
+        o_track = np.array(o_track)
+    else:
+        o_track = np.einsum("ij, bj -> bi", W_o, h_track).argmax(axis=-1)
 
     skip = skipped_trasit
-    it = max(np.diff(np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1]).argmax()-1, 0)
+    ocurr = o_track[0]
+    candidates = []
+    idtr = 0
+    pidtr = 0
+    for t in range(1,o_track.shape[0]):
+        if o_track[t] != ocurr:
+            skip -= 1
+            ocurr = o_track[t]
+            pidtr = idtr
+            idtr = t
+            if skip<=0 and t > Tmin:
+                if ocurr != logit or logit is None:
+                    candidates.append([idtr, pidtr])
+    candidates = np.array(candidates)
 
-    tt = np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1][it+1] + Tmin
-    tc = int(np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1][it+1]*tau + np.where(np.diff(o_track[Tmin:])!=0)[0][skip:-1][it]*(1-tau)) + Tmin
+    it = np.argmax(candidates[:, 0] - candidates[:, 1])
+    tt = candidates[it,0]
+    tc = int(candidates[it, 0] * tau + candidates[it, 1] * (1 - tau))
     tc = max(tc, tt-back)
+
 
     firing_t = []
     firing_trials_rate = []
-    h_track2 = []
-    o_track2 = []
     for i in range((tt-tc)+tf+1):
         trial_data = []
         fired = 0
@@ -482,104 +534,23 @@ def find_transition(W_r, W_n, W_o, sigma=1, back=25, skipped_trasit=4, t0=20, tf
 
     return firing_t, firing_trials_rate, h_track, o_track, noise_vec, tt, tc
 
-def locate_areas(W_r, W_n, W_o, T=2000, thr_fr=6, verbose=False, max_retries=5):
-    """Locate transition and cluster points"""
-    sigma = 1
-    t0 = 20
-    tau = 0.1
-    back = 20
+def locate_areas(W_r, W_n, W_o, T=2000, thr_fr=6, h_track=None, noise_vec=None, logit=None, tau=0.5, maxback=100):
     tf = 5
+    dT_trials = max(thr_fr, 25)
     trials = 100
-    skip = 4
-    Tmin = 200
-    dT = max(thr_fr, 25)
+    tau =  tau 
+    back = maxback
 
-    for attempt in range(max_retries):
-        # Initialize state
-        hj = (np.random.randn(W_r.shape[0]) * 2 - 1) * 0.1
-        for t in range(t0):
-            noisej = np.random.normal(0, sigma, W_n.shape[1])
-            hj = forward_inj(W_r, W_n, hj, [noisej])
+    while True:
 
-        # Run simulation
-        h_track = [hj.copy()]
-        o_track = [(W_o @ hj).argmax()]
-        noise_vec = np.random.normal(0, sigma, [T, W_n.shape[1]])
-        for t in range(T):
-            noisej = noise_vec[t]
-            hj = forward_inj(W_r, W_n, hj, [noisej])
-            h_track.append(hj)
-            o_track.append((W_o @ hj).argmax())
+        firing_t, firing_trials_rate, h_track, o_track, noise_vec, tt, tc = find_transition(W_r, W_n, W_o, sigma=1, back=back, tau=tau, skipped_trasit=4, t0=20, tf=tf, trials=trials, dT=dT_trials, Tmin=200, T=T, h_track=h_track, noise_vec=noise_vec, logit=logit)
 
-        noise_vec = np.concatenate([np.zeros([1, W_n.shape[1]]), noise_vec], axis=0)
-        h_track = np.array(h_track)
-        o_track = np.array(o_track)
-
-        # Find transition point (tt)
-        diff_indices = np.where(np.diff(o_track[Tmin:]) != 0)[0]
-        if len(diff_indices[skip:-1]) <= 0:
-            if verbose:
-                print(f"Attempt {attempt + 1}/{max_retries}: No valid transitions found after Tmin. Setting it = 0, tt = Tmin.")
-            it = 0
-            tt = Tmin
-        else:
-            it = max(np.diff(diff_indices[skip:-1]).argmax() - 1, 0)
-            tt = diff_indices[skip:-1][it + 1] + Tmin
-
-        # Estimate cluster point (tc)
-        if len(diff_indices[skip:-1]) <= it + 1:
-            if verbose:
-                print(f"Attempt {attempt + 1}/{max_retries}: Insufficient transitions for tc. Setting tc = tt - back.")
-            tc = tt - back
-        else:
-            tc = max(int(diff_indices[skip:-1][it + 1] * tau + 
-                        diff_indices[skip:-1][it] * (1 - tau)) + Tmin, tt - back)
-
-        # Compute firing times and rates
-        firing_t = []
-        firing_trials_rate = []
-        for i in range((tt - tc) + tf + 1):
-            trial_data = []
-            fired = 0
-            for j in range(trials):
-                hj = h_track[tf + tt - i].copy()
-                ocurr = o_track[tf + tt - i]
-                for t in range(dT):
-                    noisej = np.random.normal(0, sigma, W_n.shape[1])
-                    hj = forward_inj(W_r, W_n, hj, [noisej])
-                    oj = (W_o @ hj).argmax()
-                    if ocurr != oj:
-                        fired += 1
-                        break
-                trial_data.append(t + 1)
-            firing_t.append(np.mean(trial_data))
-            firing_trials_rate.append(fired / trials)
-
-        firing_t = np.array(firing_t)
-        firing_trials_rate = np.array(firing_trials_rate)
-
-        # Compute kick point (tk)
-        condition_indices = np.where((firing_t < 3) & (firing_trials_rate == 1))[0]
-        if len(condition_indices) > 0:
-            tk = tt - (condition_indices[-1] - tf)
-        else:
-            tk = tt
-            if verbose:
-                print(f"Attempt {attempt + 1}/{max_retries}: No points satisfy (firing_t < 3) & (firing_trials_rate == 1). Setting tk = tt.")
-
-        # Check cluster mask
-        cluster_mask = (firing_t >= thr_fr) & (firing_trials_rate < 1) & (np.arange(len(firing_t)) > tf)
+        tk = tt-(np.where((firing_t<3) & (firing_trials_rate==1))[0][-1]-tf)
+        cluster_mask = (firing_t>=thr_fr) & (firing_trials_rate<1) & (np.arange(len(firing_t))>tf)
         if np.sum(cluster_mask) > 0:
-            tc = tt - (np.where(cluster_mask)[0][0] - tf)
-            if verbose:
-                print(f"Attempt {attempt + 1}/{max_retries}: Valid cluster_mask found. Exiting retry loop.")
             break
-        if verbose:
-            print(f"[...] REITERATING (Attempt {attempt + 1}/{max_retries})")
-    else:
-        tc = max(tc, tt - back)
-        if verbose:
-            print(f"Warning: Max retries ({max_retries}) reached. Retaining tc = max(tc, tt - back).")
+        else:
+            print("[...] REITERATING")
 
     return h_track, o_track, noise_vec, tt, tk, tc
 
@@ -608,7 +579,7 @@ def noise_sensitivity(title, W_r, W_n, o_track, h_track, noise_vec, tk, tc, gamm
                 hj = h0_ch.copy() + np.random.normal(0, beta_fac, h0_ch.shape[0])  # Random initial hidden state
                 traj_k = [hj.copy()]
                 for t in range(T):
-                    noisej = noise_vec[idx+t]*(1-gamm_noise) + gamm_noise*np.random.normal(0, sigmaj, noise_vec.shape[1]) #* (np.random.rand()*1.5 if t==0 else 1)  #+ np.random.normal(0, 0.001, W_n.shape[1]).flatten() if t==0 else np.zeros_like(noise_vec[t])  # noise
+                    noisej = noise_vec[idx+t]*(1-gamm_noise) + gamm_noise*np.random.normal(0, sigmaj, noise_vec.shape[1]) 
                     hj = forward(W_r, W_n, hj, [noisej])  # Forward pass
                     traj_k.append(hj)
 
@@ -1245,72 +1216,69 @@ def second_order(folder_path, max_epochs=250, ep_rate=10, threshold=0.05, bifep=
     
 
 def ablation(weights_path, group=0, verbose=False):
-    if group == 0:
-        ablated_neurons = [83, 59, 6]
-    elif group == 1:
-        ablated_neurons = [114, 72, 28]
-
     W_r, W_n, W_o = load_weights(weights_path)
-    h_nom, o_track, noise_vec_nom, tt, tk, tc = locate_areas(W_r, W_n, W_o, verbose=verbose)
+    if group==0:
+        h_nom, o_track, noise_vec_nom, tt, tk, tc = locate_areas(W_r, W_n, W_o, logit=0)
+    else:
+        h_nom, o_track, noise_vec_nom, tt, tk, tc = locate_areas(W_r, W_n, W_o, logit=2)
     
     # Parameters
     T = 1000
-    muvals = np.arange(0, 2.1, 0.1).tolist()
-    trajs = 5
+    muvals = np.arange(0, 2.1, 0.1).tolist() 
+    trajs = 100
     trajlen = 100
     sigmaj = 1
     gamm_noise = 0.5
-    
-    # Define intervention masks
-    # Kick neurons
+
+    # Kick Neurons 
     c_kick = np.zeros(W_r.shape[0])
-    c_kick[ablated_neurons] = 1
+    if group==0:
+        c_kick[[83,59,44]]=1
+    else:
+        c_kick[[114,28,72]]=1
     cn_kick = np.zeros(W_r.shape[0])
-    
+
+
     # Noise projection
     c_noise = np.zeros(W_r.shape[0])
     cn_noise = np.zeros(W_r.shape[0])
     mask = np.zeros(W_r.shape[0]).astype(bool)
-    dpop_size = 140 # size of population 1 + population 2
-    g1 = W_r[[83,59,6],:].mean(axis=0)
-    g2 = W_r[[28,72,114],:].mean(axis=0)
-    sortmap = np.argsort(g1*g2)
-    g1 = g1[sortmap][:dpop_size]
-    g2 = g2[sortmap][:dpop_size]
-
+    mask2 = np.zeros(W_r.shape[0]).astype(bool)
+    mask3 = np.zeros(W_r.shape[0]).astype(bool)
     if group==0:
-        sortmap2 = np.argsort(g1)
-        nz_vals = (g1>0).sum()
+        mask = kprojected(W_r, 83, top_k=60, reversed=True)
+        mask2 = kprojected(W_r, 59, top_k=60, reversed=True)
+        mask3 = kprojected(W_r, 6, top_k=60, reversed=True)
     else:
-        sortmap2 = np.argsort(-g2)
-        nz_vals = (g2>0).sum()
-    final_map = sortmap[sortmap2[sortmap2<dpop_size]]
-    top_k = 83
-    top_k = min(top_k, nz_vals)
-    mask[final_map[:top_k]] = True
+        mask = kprojected(W_r, 114, top_k=60, reversed=True)
+        mask2 = kprojected(W_r, 72, top_k=60, reversed=True)
+        mask3 = kprojected(W_r, 28, top_k=60, reversed=True)
+    mask = (mask | mask2) | mask3
     cn_noise[np.where(mask)] = 1
-    cn_noise[[28, 72, 114, 59, 6, 83]] = 0
-    
+    cn_noise[[28, 72, 114, 59, 6, 83]] = 0 
+
     # Control
     c_cnt = np.zeros(W_r.shape[0])
     cn_cnt = np.zeros(W_r.shape[0])
-    top_k = 35
-    mask = np.any(np.stack([
+    top_k=35
+    mask = np.any(      # OR
+        np.stack([
         kprojected(W_r, 83, top_k=top_k, reversed=True),
         kprojected(W_r, 59, top_k=top_k, reversed=True),
         kprojected(W_r, 6, top_k=top_k, reversed=True),
         kprojected(W_r, 28, top_k=top_k, reversed=True),
         kprojected(W_r, 72, top_k=top_k, reversed=True),
         kprojected(W_r, 114, top_k=top_k, reversed=True)
-    ]), axis=0).flatten()
-    mask = ~mask
+        ]), axis=0
+    ).flatten()
+    mask = ~ mask
     cn_cnt[np.where(mask)] = 1
-    cn_cnt[[28, 72, 114, 59, 6, 83]] = 0
+    cn_cnt[[28,72,114,59,83,6]]=0
     
     # Run simulations
-    mu_data_kick = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_kick, cn_kick, T, sigmaj, gamm_noise)
-    mu_data_noise = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_noise, cn_noise, T, sigmaj, gamm_noise)
-    mu_data_cnt = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs, trajlen, muvals, c_cnt, cn_cnt, T, sigmaj, gamm_noise)
+    mu_data_kick = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs=trajs, trajlen=trajlen, muvals=muvals, c=c_kick, cn=cn_kick, h0j=None, T=T, sigmaj=sigmaj, gamm_noise=gamm_noise)
+    mu_data_noise = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs=trajs, trajlen=trajlen, muvals=muvals, c=c_noise, cn=cn_noise, h0j=None, T=T, sigmaj=sigmaj, gamm_noise=gamm_noise)
+    mu_data_cnt = run_injected(W_r, W_n, W_o, tc, h_nom, noise_vec_nom, trajs=trajs, trajlen=trajlen, muvals=muvals, c=c_cnt, cn=cn_cnt, h0j=None, T=T, sigmaj=sigmaj, gamm_noise=gamm_noise)
     
     # Compute PCA
     pca_hj = PCA(n_components=2)
@@ -1321,9 +1289,9 @@ def ablation(weights_path, group=0, verbose=False):
             mu_data[mu]["traj_l_pca"] = pca_hj.transform(mu_data[mu]["traj_l"].reshape(-1, W_r.shape[0])).reshape(trajs, trajlen + 1, 2)
     
     # Compute critical eigenvalues
-    critical_complex_eigs_mean_kick, critical_complex_eigs_std_kick = compute_critical_eigs(mu_data_kick, muvals)
-    critical_complex_eigs_mean_noise, critical_complex_eigs_std_noise = compute_critical_eigs(mu_data_noise, muvals)
-    critical_complex_eigs_mean_cnt, critical_complex_eigs_std_cnt = compute_critical_eigs(mu_data_cnt, muvals)
+    critical_complex_eigs_mean_kick, critical_complex_eigs_std_kick = compute_CE(mu_data_kick, muvals)
+    critical_complex_eigs_mean_noise, critical_complex_eigs_std_noise = compute_CE(mu_data_noise, muvals)
+    critical_complex_eigs_mean_cnt, critical_complex_eigs_std_cnt = compute_CE(mu_data_cnt, muvals)
     
     # Plotting setup
     plt.rcParams['font.size'] = 16
