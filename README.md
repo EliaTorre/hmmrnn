@@ -29,6 +29,11 @@ The repository is organized as follows:
 - `TrainedModels/`: Contains pre-trained RNN models (downloadable from https://drive.google.com/file/d/1qsSK-hI2xw8pl24dYlXN6ssa_0qAUFpL/view?usp=sharing)
 - `main.ipynb`: Jupyter notebook with step-by-step guide to run all functions
 
+## Usage
+1. Download the TrainedModels folder and place it in the repository root
+2. Open `main.ipynb` in Jupyter Notebook or JupyterLab
+3. Follow the step-by-step instructions to run the analysis
+
 ### TrainedModels Folder
 
 The `TrainedModels` folder contains pre-trained models organized by HMM complexity. After downloading the models, place them in the repository root directory. The structure is as follows:
@@ -50,20 +55,20 @@ The `TrainedModels` folder contains pre-trained models organized by HMM complexi
 ### main.ipynb
 
 A Jupyter notebook that serves as a step-by-step guide to run all the functions in the project. It demonstrates how to:
-- Train RNN models on HMM generated data
-- Test model performance
-- Perform reverse engineering analysis
-- Visualize results
+- Train RNN models on HMM generated data and test model performance
+- Perform state-space reverse-engineering to visualize trajectories in PCA space (with/without inputs), fixed-point and limit-cycle radius variations across input variances
+- Inspect dynamical properties of state space: state-space across epochs, expected second-order term, transition rates, residency times, logit-gradient sign changes and noise sensitivity
+- Mechanistic Interpretability: identifying kick neurons, noise-integrating populations and ablation studies. 
 
 ### config.py
 
 Configuration module for HMM-RNN experiments. Defines different configuration classes:
 - `DefaultConfig`: Base configuration with default parameters
-- `HMMTwo`, `HMMThree`, `HMMFour`, `HMMFive`: Configurations for different HMM complexities
+- `HMMTwo`, `HMMThree`, `HMMFour`, `HMMFive`: Configurations for linear-chain of HMMs used in the paper.
 
 ### hmm.py
 
-Implements the Hidden Markov Model (HMM) class for generating and managing sequences. Features:
+Implements the Hidden Markov Model (HMM) class for generating sequences. Features:
 - Custom transition and emission matrix generation
 - Sequence generation with different methods (linear, gaussian)
 - Data splitting for training, validation, and testing
@@ -73,12 +78,11 @@ Implements the Hidden Markov Model (HMM) class for generating and managing seque
 Implements the Recurrent Neural Network (RNN) class. Features:
 - RNN architecture with configurable input size, hidden size, and output size
 - Training with Sinkhorn divergence loss
-- Sequence generation with different dynamics modes
-- Model saving and loading
+- Sequence generation, model saving and loading
 
 ### test.py
 
-Implements the Test class for evaluating and comparing HMM and RNN models. Features:
+Implements the Test class for evaluating and comparing HMM and RNN models at the end of training. Features:
 - Euclidean distance calculation between matched sequences
 - Volatility analysis (frequency of state changes)
 - Output frequency analysis
@@ -97,28 +101,23 @@ Implements the Reverse class for reverse engineering analysis of RNNs for quick 
 Implements the Manager class for experiment execution, data handling, and result storage. Features:
 - Experiment directory structure setup
 - Configuration management
-- Training pipeline execution
+- Training pipeline execution for single/multiple model training
 - Test and reverse engineering analysis
-- Multiple experiment execution
 
-### metrics.py
+### metrics.py and statespace.py
 
-Implements functions for plotting comparing HMM and RNN models using various metrics:
+Implements functions for large-scale plotting of metrics and trajectories in PCA space across all configurations and trained RNNs presented in the paper:
+- 144 models: {2,3,4,5} HMM latent states x {50, 150, 200} RNN hidden size x {1, 10, 100, 200} input size x {3} random seeds.
 - Transition matrix calculation and plotting
 - Euclidean distance calculation and plotting
-- Grid plots for comparing different model configurations 
-
-### statespace.py
-
-Implements functions for analyzing the state space of trained RNNs:
 - Trajectory generation with and without input
-- Fixed point analysis
+- Fixed point identification
 - Variance contour plots
 - Grid plots for comparing different model configurations
 
 ### mechint.py
 
-Implements mechanistic interpretability tools for analyzing RNN dynamics:
+Implements mechanistic interpretability tools used both to analyze RNN dynamics and population/single-neurons level reverse-engineering:
 - Residency time analysis
 - Noise sensitivity analysis
 - Neuron activity visualization
@@ -126,16 +125,10 @@ Implements mechanistic interpretability tools for analyzing RNN dynamics:
 - Ablation studies
 
 ### sinkhorn.py
-
-Implements the Sinkhorn solver for optimal transport under entropic regularization:
+Auxiliary sinkhorn divergence implementation used to run tests and metrics on the models:
 - Used for matching sequences between HMM and RNN outputs
 - Provides distance metrics for comparing distributions
 
-## Usage
-
-1. Download the TrainedModels folder and place it in the repository root
-2. Open `main.ipynb` in Jupyter Notebook or JupyterLab
-3. Follow the step-by-step instructions to run the analysis
 
 ## Citation
 
