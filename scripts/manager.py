@@ -117,8 +117,24 @@ class Manager:
             hidden_size=self.config["hidden_size"],
             num_layers=self.config["num_layers"],
             output_size=self.config["outputs"],
-            biased=self.config["biased"]
+            biased=self.config["biased"],
+            weight_decay=self.config.get("weight_decay", 0.0)
         )
+        
+        # Load pre-trained weights if specified
+        pretrained_path = self.config.get("pretrained_model_path")
+        if pretrained_path:
+            if os.path.exists(pretrained_path):
+                print(f"Loading pre-trained model from {pretrained_path}")
+                try:
+                    rnn.load_model(pretrained_path)
+                    print("Pre-trained model loaded successfully")
+                except Exception as e:
+                    print(f"Warning: Failed to load pre-trained model: {e}")
+                    print("Continuing with random initialization")
+            else:
+                print(f"Warning: Pre-trained model path '{pretrained_path}' does not exist")
+                print("Continuing with random initialization")
         
         # Generate HMM data
         print("Generating HMM data...")

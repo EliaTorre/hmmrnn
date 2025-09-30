@@ -6,12 +6,13 @@ import matplotlib.pyplot as plt
 from pathlib import Path 
 
 class RNN(nn.Module):
-    def __init__(self, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False]):
+    def __init__(self, input_size=100, hidden_size=150, num_layers=1, output_size=3, biased=[False, False], weight_decay=0.0):
         super(RNN, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.output_size = output_size
+        self.weight_decay = weight_decay
         
         # RNN layers
         self.rnn = nn.RNN(input_size, hidden_size, num_layers, nonlinearity='relu', 
@@ -94,6 +95,14 @@ class RNN(nn.Module):
                 targets = targets.reshape(targets.shape[0], -1)
                 
                 loss = criterion(outputs, targets)
+                
+                # Add L2 regularization if weight_decay > 0
+                if self.weight_decay > 0:
+                    l2_reg = torch.tensor(0., device=self.device)
+                    for param in self.parameters():
+                        l2_reg += torch.norm(param, p=2)
+                    loss += self.weight_decay * l2_reg
+                
                 train_loss.append(loss.item())
                 
                 loss.backward()
@@ -119,6 +128,14 @@ class RNN(nn.Module):
                     targets = targets.reshape(targets.shape[0], -1)
                     
                     loss = criterion(outputs, targets)
+                    
+                    # Add L2 regularization if weight_decay > 0
+                    if self.weight_decay > 0:
+                        l2_reg = torch.tensor(0., device=self.device)
+                        for param in self.parameters():
+                            l2_reg += torch.norm(param, p=2)
+                        loss += self.weight_decay * l2_reg
+                    
                     val_loss.append(loss.item())
             
             avg_val_loss = sum(val_loss) / len(val_loss)

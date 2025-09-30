@@ -96,7 +96,7 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     # Compute number of unstable eigenvalues for each hidden state
     num_unstable_list = []
     for h in h_sequence:
-        x = torch.normal(mean=0, std=sigma, size=(100,)).float().to(device)
+        x = torch.normal(mean=0, std=0, size=(100,)).float().to(device)
         pre_act = x @ ih.T + h @ hh.T
         D = torch.diag((pre_act > 0).float())
         J = D @ hh
@@ -110,7 +110,7 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     logits = torch.softmax(h_sequence @ fc.T, dim=1)
     group1 = avg_steps < 2
     group2 = (avg_steps >= cutoffcol) & (avg_steps <= 4*cutoffcol)
-    group3 = (avg_steps > 4*cutoffcol) & ((logits[:, 0].cpu().numpy() > 0.8) | (logits[:, 2].cpu().numpy() > 0.8))
+    group3 = (avg_steps > 4*cutoffcol) & (torch.max(logits, dim=1)[0].cpu().numpy() > 0.8)
     
     # Compute average number of unstable eigenvalues and residency time for each group
     avg_num_unstable_group1 = np.mean([num_unstable_list[i] for i in range(T) if group1[i]]) if np.any(group1) else 0
@@ -1233,7 +1233,8 @@ def ablation(weights_path, group=0, verbose=False):
     # Kick Neurons 
     c_kick = np.zeros(W_r.shape[0])
     if group==0:
-        c_kick[[83,59,44]]=1
+        c_kick[[32,36,59]]=1
+        #c_kick[[83,59,44]]=1
     else:
         c_kick[[114,28,72]]=1
     cn_kick = np.zeros(W_r.shape[0])

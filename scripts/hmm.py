@@ -108,8 +108,15 @@ class HMM:
             print("Emission Probabilities:")
             print(emission_probabilities)
             return emission_probabilities
+        elif self.emission_method == 'triangular':
+            if self.outputs != 3 or self.states != 3:
+                raise ValueError("Triangular emission method only supports 3 outputs and 3 states.")
+            emission_probabilities = np.array([[0.98, 0.01, 0.01], [0.01, 0.98, 0.01], [0.01, 0.01, 0.98]])
+            print("Emission Probabilities (Triangular):")
+            print(emission_probabilities)
+            return emission_probabilities
         else:
-            raise ValueError("Invalid method. Choose 'linear' or 'gaussian'.")
+            raise ValueError("Invalid method. Choose 'linear', 'gaussian', or 'triangular'.")
     
     def gen_seq(self, num_seq, seq_len):
         """Generate sequences from the HMM."""
