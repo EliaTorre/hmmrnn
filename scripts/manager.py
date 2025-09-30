@@ -57,8 +57,8 @@ class Manager:
         """Save the configuration to a file"""
         # Save as pickle for program use
         config_path = self.config_dir / "config.pkl"
-        with open(config_path, "wb") as f:
-            pickle.dump(self.config, f)
+        #with open(config_path, "wb") as f:
+            #pickle.dump(self.config, f)
             
         # Also save as JSON for human readability
         json_path = self.config_dir / "config.json"
@@ -147,15 +147,15 @@ class Manager:
         data_splits = hmm.split_data(one_hot_sequences, sampled_states)
         
         # Save the data
-        data_path = self.data_path / "hmm_sequences.pkl"
-        with open(data_path, "wb") as f:
+        #data_path = self.data_path / "hmm_sequences.pkl"
+        #with open(data_path, "wb") as f:
             # Convert PyTorch tensors to NumPy arrays for saving
-            data_to_save = {
-                key: value.numpy() if isinstance(value, torch.Tensor) else value
-                for key, value in data_splits.items()
-            }
-            pickle.dump(data_to_save, f)
-        print(f"HMM data saved to {data_path}")
+            #data_to_save = {
+                #key: value.numpy() if isinstance(value, torch.Tensor) else value
+                #for key, value in data_splits.items()
+            #}
+            #pickle.dump(data_to_save, f)
+        #print(f"HMM data saved to {data_path}")
         
         # Setup Sinkhorn loss for training
         criterion = geomloss.SamplesLoss(blur=0.3)
@@ -265,9 +265,9 @@ class Manager:
         model_tester.gen_plots(test_results, save_path=self.figs_path, model_info=model_info)
         
         # Save test results
-        test_results_path = self.config_dir / "test_results.pkl"
-        with open(test_results_path, "wb") as f:
-            pickle.dump(test_results, f)
+        #test_results_path = self.config_dir / "test_results.pkl"
+        #with open(test_results_path, "wb") as f:
+            #pickle.dump(test_results, f)
         
         # Clear GPU memory
         self.clear_gpu_memory() 
@@ -320,9 +320,9 @@ class Manager:
         )
         
         # Save PCA results
-        pca_results_path = self.config_dir / "pca_results.pkl"
-        with open(pca_results_path, "wb") as f:
-            pickle.dump(pca_results, f)
+        #pca_results_path = self.config_dir / "pca_results.pkl"
+        #with open(pca_results_path, "wb") as f:
+            #pickle.dump(pca_results, f)
         
         # Clear GPU memory
         self.clear_gpu_memory()
@@ -370,9 +370,9 @@ class Manager:
                 results["best_lr"] = lr
                 break
         
-        results_path = self.config_dir / "results.pkl"
-        with open(results_path, "wb") as f:
-            pickle.dump(results, f)
+        #results_path = self.config_dir / "results.pkl"
+        #with open(results_path, "wb") as f:
+            #pickle.dump(results, f)
             
         # Also save a summary as JSON
         summary = {
@@ -397,8 +397,8 @@ class Manager:
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=4)
             
-        print(f"Experiment results saved to {results_path}")
-        print(f"Experiment summary saved to {summary_path}")
+        #print(f"Experiment results saved to {results_path}")
+        #print(f"Experiment summary saved to {summary_path}")
         print(f"Experiment completed in {duration:.2f} minutes")
         
         return results
@@ -552,14 +552,14 @@ class Manager:
         data_splits = hmm.split_data(one_hot_sequences, sampled_states)
         
         # Save the data
-        data_path = self.data_path / "hmm_sequences.pkl"
-        with open(data_path, "wb") as f:
-            data_to_save = {
-                key: value.numpy() if isinstance(value, torch.Tensor) else value
-                for key, value in data_splits.items()
-            }
-            pickle.dump(data_to_save, f)
-        print(f"HMM data saved to {data_path}")
+        #data_path = self.data_path / "hmm_sequences.pkl"
+        #with open(data_path, "wb") as f:
+            #data_to_save = {
+                #key: value.numpy() if isinstance(value, torch.Tensor) else value
+                #for key, value in data_splits.items()
+            #}
+            #pickle.dump(data_to_save, f)
+        #print(f"HMM data saved to {data_path}")
         
         # Setup Sinkhorn loss
         criterion = geomloss.SamplesLoss(blur=0.3)
@@ -617,9 +617,9 @@ class Manager:
         }
         
         # Save results
-        results_path = self.config_dir / "results.pkl"
-        with open(results_path, "wb") as f:
-            pickle.dump(results, f)
+        #results_path = self.config_dir / "results.pkl"
+        #with open(results_path, "wb") as f:
+            #pickle.dump(results, f)
         
         # Save a summary as JSON
         summary = {
@@ -644,8 +644,8 @@ class Manager:
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=4)
         
-        print(f"Experiment results saved to {results_path}")
-        print(f"Experiment summary saved to {summary_path}")
+        #print(f"Experiment results saved to {results_path}")
+        #print(f"Experiment summary saved to {summary_path}")
         print(f"Experiment completed in {duration:.2f} minutes")
         
         # Clear GPU memory
