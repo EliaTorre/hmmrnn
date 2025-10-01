@@ -234,7 +234,7 @@ class HMMThreeTriangularFully(DefaultConfig):
 
     TRAINING = {
         "batch_size": 4096,
-        "epochs": 500,
+        "epochs": 1000,
         "learning_rates": [0.001],
         "tau": 1.0,
         "grad_clip": 0.3,
