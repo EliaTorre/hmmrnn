@@ -205,7 +205,7 @@ def plot_trajectories(projected_trajectories, color_data, pc_axes, color_mode,
                 color = 'gray'  # Fallback for unexpected classes
             
             # Plot the segment
-            ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=2.5, alpha=0.7)
+            #ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=2.5, alpha=0.7)
             
             # Add arrows if requested
             if show_arrows:
@@ -217,7 +217,7 @@ def plot_trajectories(projected_trajectories, color_data, pc_axes, color_mode,
                     head_width=0.15,
                     head_length=0.15,
                     length_includes_head=True,
-                    lw=0.8,
+                    lw=2.5,
                     alpha=0.7
                 )
     
@@ -388,9 +388,9 @@ if __name__ == "__main__":
         hidden_size=hidden_size,
         pc_axes=(0, 1),  # PC1 vs PC2
         color_mode='logits',  # or 'sampled'
-        num_samples=1,
-        trajectory_length=700,
-        save_path='plots/trajectories/trajectories_cyclic_prova.svg',  # SVG format
+        num_samples=2,
+        trajectory_length=200,
+        save_path='plots/trajectories/trajectories_fully.svg', 
         title='RNN Trajectories',
         random_seed=42,
         with_input=True 

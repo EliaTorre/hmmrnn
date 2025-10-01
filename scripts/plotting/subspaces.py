@@ -209,7 +209,7 @@ def plot_subspace_trajectories(sequences, sequence_outputs, pc_dims=(0, 1),
             color = output_colors.get(outputs[i], 'gray')
             
             # Plot the line segment
-            ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=2.5, alpha=alpha)
+            #ax.plot([start[0], end[0]], [start[1], end[1]], c=color, lw=2.5, alpha=alpha)
             
             # Add arrows if requested
             if show_arrows:
@@ -221,7 +221,7 @@ def plot_subspace_trajectories(sequences, sequence_outputs, pc_dims=(0, 1),
                     head_width=0.15,
                     head_length=0.15,
                     length_includes_head=True,
-                    lw=0.8,
+                    lw=2.5,
                     alpha=alpha
                 )
     
