@@ -355,7 +355,7 @@ def plot_transition_matrix_differences(results):
         cbar.set_label("Squared Difference")
         
         # Save the figure
-        plt.savefig(f"transition_matrix_differences_{model_type}.png", dpi=600, bbox_inches="tight")
+        plt.savefig(f"transition_matrix_differences_{model_type}.svg", dpi=300, bbox_inches="tight")
         plt.close(fig)
 
 def compare_hmm_rnn_euclidean_distances():
@@ -598,7 +598,7 @@ def plot_euclidean_distances(results):
         plt.legend()
         
         # Save the figure
-        plt.savefig(f"euclidean_distances_{model_type}.png", dpi=600, bbox_inches="tight")
+        plt.savefig(f"euclidean_distances_{model_type}.svg", dpi=300, bbox_inches="tight")
         plt.close()
 
 if __name__ == "__main__":
