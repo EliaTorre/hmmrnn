@@ -7,6 +7,7 @@ from scripts.rnn import RNN
 from sklearn.decomposition import PCA
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import LineCollection
+from datetime import datetime
 
 def load_model(model_path, input_size=100, hidden_size=150, output_size=3):
     rnn = RNN(input_size=input_size, hidden_size=hidden_size, output_size=output_size)
@@ -196,7 +197,8 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     cbar2.set_label('# Eigenvalues Re > 0', fontsize=14)
     cbar2.set_ticks([0.5, 1.5, 2.5])
     cbar2.ax.set_xticklabels(['0', '1', '2'], fontsize=14)
-    
+    datetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    plt.savefig(f'scripts/plotting/plots/residency/residency_{datetime_str}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=[83, 59, 6, 28, 72, 114], n_steps=1000, device=None):
@@ -621,6 +623,7 @@ def noise_sensitivity(title, W_r, W_n, o_track, h_track, noise_vec, tk, tc, gamm
             axs[col_idx].set_yticks([])
 
     plt.suptitle(title, fontsize=16)
+    plt.savefig(f'scripts/plotting/plots/noise_sensitivity/noise_sensitivity_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.tight_layout()
 
     #### PLOT 2
@@ -690,6 +693,7 @@ def noise_sensitivity(title, W_r, W_n, o_track, h_track, noise_vec, tk, tc, gamm
         }
 
     plt.legend(fontsize=10)
+    plt.savefig(f'scripts/plotting/plots/noise_sensitivity/noise_sensitivity_metrics_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def weight_matrices(W_r):
@@ -907,9 +911,8 @@ def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_
     ax = fig.add_subplot(111, projection='3d')
     ax.view_init(elev=14, azim=80, roll=0)
     
-    # Define fixed colors
-    color_red = 'darkred'
-    color_green = 'darkgreen'
+    # Define colors for each output class
+    colors = {0: 'darkgreen', 1: 'royalblue', 2: 'darkred'}
     
     # Plot points and trajectories for each epoch
     for t, (cloud, out) in enumerate(zip(pca_points_2d, out_t)):
@@ -921,14 +924,13 @@ def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_
         # Check if this is the purple epoch
         is_purple = selected_epochs[t] == purple_epoch if purple_epoch is not None else False
         
-        # Color for scatter points
-        scatter_color_red = 'purple' if is_purple else color_red
-        scatter_color_green = 'purple' if is_purple else color_green
-        
-        # Plot scatter points
-        mask = out[:n_points] == 2
-        ax.scatter(x[mask], y[mask], z[mask], c=[scatter_color_red], s=10, alpha=0.3)
-        ax.scatter(x[~mask], y[~mask], z[~mask], c=[scatter_color_green], s=10, alpha=0.3)
+        # Plot scatter points for each class
+        for class_idx in [0, 1, 2]:
+            mask = out[:n_points] == class_idx
+            if np.any(mask):  # Only plot if there are points of this class
+                # Use purple color if this is the purple epoch, otherwise use class color
+                scatter_color = 'purple' if is_purple else colors[class_idx]
+                ax.scatter(x[mask], y[mask], z[mask], c=[scatter_color], s=10, alpha=0.3)
         
         # Plot trajectory
         if is_purple:
@@ -937,7 +939,7 @@ def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_
         else:
             # Plot each segment based on the class of the starting point
             for i in range(trlen - 1):
-                segment_color = color_red if out[i] == 2 else color_green
+                segment_color = colors.get(out[i], 'gray')  # Use gray as fallback
                 ax.plot(x[i:i+2], y[i:i+2], [t, t], color=segment_color, alpha=0.3)
     
     # Set labels and ticks
@@ -947,6 +949,8 @@ def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_
     ax.set_xticks([])
     ax.set_yticks([])
     plt.title('PCA of Latent Dynamics Across Epochs')
+    datetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    plt.savefig(f'scripts/plotting/plots/evolution/pca_evolution_{datetime_str}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def expected_deltah(W_r, W_n, h0=None, trials=100, t0=10, tf=50, sigma=1, h_eps=0.1, silent=False):
@@ -1212,6 +1216,7 @@ def second_order(folder_path, max_epochs=250, ep_rate=10, threshold=0.05, bifep=
     plt.xlabel("Epochs")
     plt.ylabel("Hidden units")
     plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--')
+    plt.savefig(f'scripts/plotting/plots/second_order/second_order_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.show()
     
 
