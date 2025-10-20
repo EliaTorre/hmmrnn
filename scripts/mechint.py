@@ -8,6 +8,7 @@ from sklearn.decomposition import PCA
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import LineCollection
 from datetime import datetime
+import time
 
 def load_model(model_path, input_size=100, hidden_size=150, output_size=3):
     rnn = RNN(input_size=input_size, hidden_size=hidden_size, output_size=output_size)
@@ -53,6 +54,7 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
             prev_delta_sign = None
             steps = 0
             while steps < max_steps:
+                t0 = time.time()
                 x = torch.normal(mean=0, std=sigma, size=(100,)).float().to(device)
                 h_current = torch.relu(x @ ih.T + h_current @ hh.T)
                 new_logits = h_current @ fc.T
@@ -62,6 +64,8 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
                     steps_list.append(steps + 1)
                     sign_changes_list.append(sign_changes)
                     break
+                t1 = time.time()
+                print(f"Step time: {t1 - t0:.10f} seconds", end='\r')
                 current_logit = new_logits[most_probable].item()
                 delta_logit = current_logit - prev_logit
                 current_sign = 1 if delta_logit > 0 else (-1 if delta_logit < 0 else 0)
@@ -198,7 +202,7 @@ def residency_plot(title, model_path, sigma=1, max_steps=50, n_samples=20, t0=20
     cbar2.set_ticks([0.5, 1.5, 2.5])
     cbar2.ax.set_xticklabels(['0', '1', '2'], fontsize=14)
     datetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plt.savefig(f'scripts/plotting/plots/residency/residency_{datetime_str}.svg', format='svg', bbox_inches='tight')
+    #plt.savefig(f'scripts/plotting/plots/residency/residency_{datetime_str}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=[83, 59, 6, 28, 72, 114], n_steps=1000, device=None):
@@ -293,7 +297,7 @@ def neuron_activities(model_path, initial_hidden_states=None, specified_neurons=
                         orientation='vertical', fraction=0.02, pad=0.1)
     cbar.set_label('Pre-Activation Value', fontsize=14)
     cbar.ax.tick_params(labelsize=14)
-
+    plt.savefig(f'scripts/plotting/plots/neuron_activities/neuron_activities_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def relu(x):
@@ -332,6 +336,22 @@ def jacobian_inj(W_r, h, W_n, n, ret_D=False, c=None, mu=1, c2=None, mu2=1, cn=N
     else:
         return D@W_r*ct - (np.eye(D.shape[0]) if stepJac else 0)
 
+def jacobian_inj2(W_r, h, W_n, n, ret_D=False, c=None, mu=1, c2=None, mu2=1, stepJac=False):
+    """Compute the Jacobian of ReLU activation."""
+
+    ct = np.ones(W_r.shape[0])
+    if c is not None:
+        ct[c>0] *= c[c>0]*mu
+    ct2 = np.ones(W_r.shape[0])
+    if c2 is not None:
+        ct2[c2>0] *= c2[c2>0]*mu2
+
+    D = np.diag(((W_r@h*ct + W_n@n) > 0).astype(float))*ct2
+    if ret_D:
+        return D@W_r*ct - (np.eye(D.shape[0]) if stepJac else 0), D
+    else:
+        return D@W_r*ct - (np.eye(D.shape[0]) if stepJac else 0)
+
 
 def forward_inj(Wr, Wn, h0, u_vec, ret_intermediate=False, c=None, mu=1, cn=None, mun=1):
     ct = np.ones(Wr.shape[0])
@@ -347,6 +367,26 @@ def forward_inj(Wr, Wn, h0, u_vec, ret_intermediate=False, c=None, mu=1, cn=None
         h_intermediate = [h0.copy()]
     for u in u_vec:
         h0 = relu((Wr @ h0)*ct + (Wn@u)*ctn)
+        if ret_intermediate:
+            h_intermediate.append(h0.copy())
+    if ret_intermediate:
+        return h_intermediate
+    return h0
+
+def forward_inj2(Wr, Wn, h0, u_vec, ret_intermediate=False, c=None, mu=1, cn=None, mun=1):
+    ct = np.ones(Wr.shape[0])
+    if c is not None:
+        ct[c!=0] *= c[c!=0]*mu
+
+    ctn = np.ones(Wr.shape[0])
+    if cn is not None:
+        ctn[cn!=0] *= cn[cn!=0]*mun
+
+    if ret_intermediate:
+        # Store intermediate states
+        h_intermediate = [h0.copy()]
+    for u in u_vec:
+        h0 = relu((Wr @ h0)*ct + (Wn @ u)*ctn)
         if ret_intermediate:
             h_intermediate.append(h0.copy())
     if ret_intermediate:
@@ -741,6 +781,7 @@ def weight_matrices(W_r):
     # Add horizontal colorbar below all plots
     cbar = fig.colorbar(s1, ax=axs, orientation='horizontal', fraction=0.15, pad=0.05)
     cbar.set_label("Weight value")
+    plt.savefig(f'scripts/plotting/plots/weight_matrices/weight_matrices_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def mean_activities(model_path, T=300, kick_group1=[83,6,59], kick_group2=[114,72,28], topk=70, sigmaj=1, TMaxx=200):
@@ -822,6 +863,7 @@ def mean_activities(model_path, T=300, kick_group1=[83,6,59], kick_group2=[114,7
     plt.xlabel("Time", fontsize=16)
     plt.ylabel("Mean activity", fontsize=16)
     plt.title("Mean activity of Kick Neurons and Noise Integrating Populations", fontsize=20)
+    plt.savefig(f'scripts/plotting/plots/mean_activities/mean_activities_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.show()
 
 def pca_evolution(folder_path, selected_epochs_list, T=5000, t0=10, sigmaj=1, h_eps=0.1, maxp=700, trlen=700, clip_value=15, purple_epoch=None):
@@ -1013,6 +1055,64 @@ def expected_deltah(W_r, W_n, h0=None, trials=100, t0=10, tf=50, sigma=1, h_eps=
         for t in range(1, t0):
             noise = np.random.normal(0, sigma, W_n.shape[1])
             h0j = forward(W_r, W_n, h0j, [noise]) 
+
+        # Compute the second-order noise vector
+        delta_h2, delta_h1 = compute_delta_h2(W_r, W_n, h0j, sigma, tf)
+        delta_h1_l.append(delta_h1)
+        delta_h2_l.append(delta_h2)
+
+    return np.array(delta_h2_l).mean(axis=0), np.array(delta_h1_l).mean(axis=0)
+    #return np.array(delta_h2_l), np.array(delta_h1_l)
+
+def expected_deltah2(W_r, W_n, h0=None, trials=100, t0=10, tf=50, sigma=1, h_eps=0.1, silent=False):
+    def compute_delta_h2(W_r, W_n, h0, sigma, t, Mtk_corr=True):
+        n = W_r.shape[0]
+        r = W_n.shape[1]
+    
+        h_unperturbed = [h0.copy()]
+        for k in range(1, t):
+            z_k = W_r @ h_unperturbed[-1]  # Pre-activation
+            h_k = relu(z_k)                # Post-activation
+            h_unperturbed.append(h_k)
+        
+        # Step 2: Compute Jacobians for the unperturbed trajectory
+        # For ReLU, Jacobian is diagonal with 1 where z_k > 0, 0 otherwise
+        #D_phi = [np.diag((W_r @ h > 0).astype(float)) for h in h_unperturbed]
+        D_phi = [np.diag((h > 0).astype(float)) for h in h_unperturbed]
+        
+        # Step 3: Generate noise
+        omega = np.random.normal(0, sigma, (t, r))
+
+        delta_h1 = np.zeros((t, n))
+        delta_h1[0] +=  W_n @ omega[0]
+        for k in range(1,t):
+            A_k = W_r @ D_phi[k-1] 
+            delta_h1[k] = A_k @ delta_h1[k-1] + W_n @ omega[k]
+
+        delta_h2 = np.zeros(n)
+        for u in range(t):
+            # z_u = W_r @ h_unperturbed[u]  # Pre-activation at step u
+            z_u = h_unperturbed[u] 
+            dhu = delta_h1[u]
+            dv2 = (dhu)**2
+            fd1 = 0.5 * W_r @ np.einsum("i,i->i", dv2, (z_u > 0))
+            A_k = W_r @ D_phi[u] 
+            delta_h2 = A_k @ delta_h2 + fd1 
+
+        return delta_h2, delta_h1[0]
+
+    # PERTURBATION VECS
+    delta_h1_l = []
+    delta_h2_l = []
+    for ex in range(trials):
+        if not silent:
+            print(f"{ex/trials*100:.2f}%    ", end="\r")
+        if h0 is None:
+            h0 = (np.random.randn(W_r.shape[0])*2-1)*h_eps
+        h0j = h0+(np.random.randn(W_r.shape[0])*2-1)*h_eps 
+        for t in range(1, t0):
+            noise = np.random.normal(0, sigma, W_n.shape[1])
+            h0j = forward_inj(W_r, W_n, h0j, [noise]) 
 
         # Compute the second-order noise vector
         delta_h2, delta_h1 = compute_delta_h2(W_r, W_n, h0j, sigma, tf)
@@ -1380,4 +1480,279 @@ def ablation(weights_path, group=0, verbose=False):
     axs[1, 2].set_xlabel("$\mu$")
     
     plt.tight_layout()
+    plt.savefig(f'scripts/plotting/plots/ablation/ablation_group_{group}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
+    plt.show()
+
+
+def training_plot(folder_path, max_epochs=250, ep_rate=10, threshold=0.05, bifep=None, silent=True, noisy=True, nfree=False):
+    assert nfree or noisy 
+
+    # Takes a list of Jacobians and computes statistics of their eigenvalues
+    def Hopf_eigs_stat(Jl, do_mobius=True, t0=0, eps_real=0.1, eps_img=0.05, esum=False):
+        compl_stat = []
+        unstable_stat = []
+        for Jt in Jl[t0:]:
+            eigvals = np.linalg.eigvals(Jt)
+            if esum:
+                unstable_stat += [(np.linalg.norm(np.stack([np.real(eigvals), np.imag(eigvals)], axis=-1), axis=-1)>1).sum()]
+            else:
+                unstable_stat += [(np.linalg.norm(np.stack([np.real(eigvals), np.imag(eigvals)], axis=-1), axis=-1)>1).any()+0.]
+            
+            if do_mobius:
+                # Apply Mobius transformation to eigenvalues
+                eigvals = mobius_transform(eigvals)
+            
+            # for complex eigs it counts just 1 per complex pair
+            if esum:
+                compl_stat += [np.logical_and(np.abs(eigvals.real)<eps_real, eigvals.imag>eps_img).sum()]        
+            else:
+                compl_stat += [np.logical_and(np.abs(eigvals.real)<eps_real, eigvals.imag>eps_img).any()+0.]    
+        return np.max(compl_stat), np.mean(compl_stat), np.std(compl_stat), np.max(unstable_stat), np.mean(unstable_stat), np.std(unstable_stat)
+
+    def mobius_transform(z):
+        """Mobius transformation"""
+        return (z-1)/(z+1)
+    
+
+    # Get and sort model files
+    model_files = sorted(
+        [f for f in os.listdir(folder_path) if f.startswith('model_epoch_') and f.endswith('.pth')],
+        key=lambda x: int(x.split('_')[-1].split('.')[0])
+    )
+    
+    all_epochs = [int(fname.split('_')[-1].split('.')[0]) for fname in model_files]
+    epochs_to_plot = [i for i in range(1, max_epochs+1, ep_rate)] #[171,181,191,201]
+    
+    # Find indices for epochs_to_plot
+    selected_indices = []
+    selected_epochs = []
+    for epoch in epochs_to_plot:
+        if epoch in all_epochs:
+            idx = all_epochs.index(epoch)
+            selected_indices.append(idx)
+            selected_epochs.append(epoch)
+        else:
+            print(f"Warning: Epoch {epoch} not found in model files.")
+    
+    # Sort by epoch number
+    if selected_epochs:
+        sorted_pairs = sorted(zip(selected_indices, selected_epochs), key=lambda x: x[1])
+        selected_indices, selected_epochs = zip(*sorted_pairs)
+        selected_indices = list(selected_indices)
+        selected_epochs = list(selected_epochs)
+    else:
+        print("No epochs to plot.")
+        return
+    
+    # Load first model to determine dimensions
+    W_r, W_n, W_o = load_weights(os.path.join(folder_path, model_files[0]))
+    state_dim = W_r.shape[0]
+    noise_dim = W_n.shape[1]
+
+
+
+    #max_epochs = 250 #500
+    # ep_rate = 5 #10
+    T = 5000
+    t0 = 10
+    tdh2 = 10 
+    trials = 20 #100
+    h_eps = .05
+    sigmaj = 1
+    stepJac = False
+
+    noise_warmup = np.random.normal(0, sigmaj, [t0, noise_dim])
+    noise_vec_j = np.random.normal(0, sigmaj, [T, noise_dim])
+    h0j = (np.random.randn(state_dim)*2-1)*0.1 
+
+    # Define custom colormap for o_track (0: dark green, 2: dark red)
+    colors = {0: 'darkgreen', 1:"royalblue", 2: 'darkred'}
+    cmap = mcolors.ListedColormap([colors[0], colors[1], colors[2]])
+
+
+    vec_dh2_l = []
+    vec_dh1_l = []
+    compl_stats_max = []
+    compl_stats_mean = []
+    compl_stats_std = []
+    unst_stats_max = []
+    unst_stats_mean = []
+    unst_stats_std = []
+
+    compl_stats_max_nn = []
+    compl_stats_mean_nn = []
+    compl_stats_std_nn = []
+    unst_stats_max_nn = []
+    unst_stats_mean_nn = []
+    unst_stats_std_nn = []
+
+
+    avg_res_time = []
+    avg_firing_rate = []
+    pca_comps = []
+    pca_points = []
+    out_t = []
+    for k, idx in enumerate(selected_indices):
+        model_file = os.path.join(folder_path, model_files[idx])
+        W_r, W_n, W_o = load_weights(model_file)
+
+        if not silent:
+            print(f"Epoch {idx}  -  [{k/len(selected_indices)*100:.2f}%]    ", end="\r")  
+            
+        # WARMUP
+        for t in range(t0):
+            noisej = noise_warmup[t]
+            h0j = forward_inj2(W_r, W_n, h0j, [noisej])  # Forward pass
+
+        # DYNAMICS
+        hj_mu = forward_inj2(W_r, W_n, h0j, noise_vec_j, ret_intermediate=True)  
+        hj_mu = np.array(hj_mu)
+        hj_mu = hj_mu[np.logical_not(np.isnan(hj_mu).any(axis=-1))].reshape(-1, hj_mu.shape[1])
+        hj_mu = hj_mu[np.logical_not(np.isinf(hj_mu).any(axis=-1))].reshape(-1, hj_mu.shape[1])
+        #if np.isnan(hj_mu).any(): continue
+        out = (np.einsum("ij, bj -> bi", W_o, hj_mu)).argmax(axis=-1)
+        out_t.append(out)
+
+        # PCA
+        #pca_hj = PCA(n_components=2)
+        #pca_hj.fit(hj_mu)
+        #hj_mu_pca = pca_hj.transform(hj_mu)
+        #pca_comps.append(pca_hj.components_)
+        #pca_points.append(hj_mu_pca)
+        #pca_points.append(hj_mu)
+
+        # PERTURBATION
+        exdh2_j, exdh1_j = expected_deltah2(W_r, W_n, h0j, trials=trials, t0=t0, tf=tdh2, sigma=sigmaj, h_eps=h_eps, silent=True)
+        vec_dh2_l.append(exdh2_j)
+        vec_dh1_l.append(exdh1_j)
+
+        # PERFORMS ANALYSIS OF JACOBIAN EIGENVALUES WITH NOISE
+        if noisy:
+            # JACOBIANS
+            Jt_l = []
+            for t in range(len(hj_mu)-1):
+                Jt_ = jacobian_inj2(W_r, hj_mu[t+1], W_n, noise_vec_j[t], ret_D=False, stepJac=stepJac)
+                Jt_l.append(Jt_)
+            Jt_l = np.array(Jt_l)
+
+            # HOPF EIGENVALUES
+            cms_max, cms_m, cms_s, us_max, us_m, us_s = Hopf_eigs_stat(Jt_l, do_mobius=True, t0=t0, eps_real=0.1, eps_img=0.05)
+            compl_stats_max.append(cms_max)
+            compl_stats_mean.append(cms_m)
+            compl_stats_std.append(cms_s)
+            unst_stats_max.append(us_max)
+            unst_stats_mean.append(us_m)
+            unst_stats_std.append(us_s)
+
+        # PERFORMS ANALYSIS OF JACOBIAN EIGENVALUES WITHOUT NOISE
+        if nfree:
+            # JACOBIANS
+            Jt_l = []
+            for t in range(len(hj_mu)-1):
+                #Jt_ = jacobian_inj(W_r, hj_mu[t+1], W_n, noise_vec_j[t], ret_D=False, stepJac=stepJac)
+                Jt_ = jacobian_inj2(W_r, hj_mu[t+1], W_n, noise_vec_j[t]*0, ret_D=False, stepJac=stepJac)
+                Jt_l.append(Jt_)
+            Jt_l = np.array(Jt_l)
+
+            # HOPF EIGENVALUES
+            cms_max_nn, cms_m_nn, cms_s_nn, us_max_nn, us_m_nn, us_s_nn = Hopf_eigs_stat(Jt_l, do_mobius=True, t0=t0, eps_real=0.1, eps_img=0.05)
+            compl_stats_max_nn.append(cms_max_nn)
+            compl_stats_mean_nn.append(cms_m_nn)
+            compl_stats_std_nn.append(cms_s_nn)
+            unst_stats_max_nn.append(us_max_nn)
+            unst_stats_mean_nn.append(us_m_nn)
+            unst_stats_std_nn.append(us_s_nn)
+
+
+        try:
+            a = np.where(np.abs(np.diff(out>0)))[0]
+            tr = a[1:][np.argmax(np.diff(a[1:]))]-3
+            avg_res = np.diff(np.where(np.diff(out)!=0)[0:]).mean()
+            avg_res_time.append(avg_res)
+            avg_firing_rate.append((1/np.diff(np.where(np.diff(out)!=0)[0:]).flatten()).mean())
+        except:
+            tr = T//2
+            avg_res_time.append(T)
+            avg_firing_rate.append(0)
+            
+
+    vec_dh2_l = np.array(vec_dh2_l)
+    vec_dh1_l = np.array(vec_dh1_l)
+
+    if noisy:
+        compl_stats_max = np.array(compl_stats_max)
+        compl_stats_mean = np.array(compl_stats_mean)
+        compl_stats_std = np.array(compl_stats_std)
+        unst_stats_max = np.array(unst_stats_max)
+        unst_stats_mean = np.array(unst_stats_mean)
+        unst_stats_std = np.array(unst_stats_std)
+        ref_comp = compl_stats_mean
+
+    if nfree:
+        compl_stats_max_nn = np.array(compl_stats_max_nn)
+        compl_stats_mean_nn = np.array(compl_stats_mean_nn)
+        compl_stats_std_nn = np.array(compl_stats_std_nn)
+        unst_stats_max_nn = np.array(unst_stats_max_nn)
+        unst_stats_mean_nn = np.array(unst_stats_mean_nn)
+        unst_stats_std_nn = np.array(unst_stats_std_nn)
+        ref_comp = compl_stats_mean_nn
+
+
+    avg_res_time = np.array(avg_res_time)
+    avg_firing_rate = np.array(avg_firing_rate)
+    # pca_comps = np.array(pca_comps)
+    # pca_points = np.array(pca_points)
+    # out_t = np.array(out_t)
+
+    #bifep = 60 #100 #65 #50 #63 #64
+    if bifep is None:
+        bifep = np.where(np.abs(np.diff(ref_comp))>0.02)[0][0]*ep_rate
+
+    font = {'size'   : 16}
+    matplotlib.rc('font', **font)
+
+    plt.figure(figsize=(20, 6))
+    plt.subplot(1, 3, 1)
+    plt.plot(np.arange(0, len(ref_comp))*ep_rate, avg_firing_rate, color="darkgreen")
+
+
+    plt.axhline(np.mean(avg_firing_rate[-6:]), color='red', lw=1.5, ls='--', label=f"converged TR")
+    plt.title(f"Average transition rate")
+    plt.xlabel("Epochs")
+    plt.ylabel("Transition rate")
+
+    plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--', label="bifurcation")
+    plt.legend()
+    plt.subplot(1, 3, 2)
+
+    if nfree:
+        plt.plot(np.arange(0, len(compl_stats_mean_nn))*ep_rate, compl_stats_mean_nn, label="complex noise free", color="darkorange", linestyle='--')
+        plt.plot(np.arange(0, len(unst_stats_mean_nn))*ep_rate, unst_stats_mean_nn, label="unstable noise free", color="darkred", linestyle='--')    
+    if noisy:
+        plt.plot(np.arange(0, len(compl_stats_mean))*ep_rate, compl_stats_mean, label="complex", color="darkorange")
+        plt.plot(np.arange(0, len(unst_stats_mean))*ep_rate, unst_stats_mean, label="unstable", color="darkred")
+    plt.title("Complex and unstable eigenvalues")
+    plt.xlabel("Epochs")
+    plt.ylabel("Mean eignvalues count")
+    plt.legend()
+
+    plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--')
+
+    plt.subplot(1, 3, 3)
+    plt.title("Expected $dh^{(2)}$")
+    plt.imshow(np.sqrt(np.abs(vec_dh2_l)).T, aspect='auto', cmap='Reds', interpolation='nearest',extent=[0, vec_dh2_l.shape[1], vec_dh2_l.shape[0]*ep_rate, 0])
+
+    #threshold = 0.05# 0.02
+    cmap = plt.cm.inferno #Reds #inferno
+    cmap.set_bad(color='white')
+    masked_data = np.ma.masked_where(np.sqrt(np.abs(vec_dh2_l)).T <= threshold, np.sqrt(np.abs(vec_dh2_l)).T)
+    plt.imshow(masked_data, aspect='auto', cmap=cmap, interpolation='nearest',
+            extent=[0, vec_dh2_l.shape[0]*ep_rate, vec_dh2_l.shape[1], 0])
+
+    plt.colorbar(label='$\mathbb{E}[dh^{(2)}]$')
+    plt.yticks([])
+    plt.xlabel("Epochs")
+    plt.ylabel("Hidden units")
+    plt.axvline(bifep, color='darkviolet', lw=1.5, ls='--')
+    plt.savefig(f'scripts/plotting/plots/second_order/second_order_{datetime.now().strftime("%Y%m%d_%H%M%S")}.svg', format='svg', bbox_inches='tight')
     plt.show()
