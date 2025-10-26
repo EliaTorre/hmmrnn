@@ -327,7 +327,6 @@ def main(folder_path: str):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python euclidean.py <folder_path>")
-        print("Example: python euclidean.py /home/elia/Documents/rnnrep/TrainedModels/Cyclic")
         print("\nNote: Sequence length will be automatically read from config.json")
         sys.exit(1)
     

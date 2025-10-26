@@ -383,7 +383,7 @@ def run_subspace_variance_pipeline(model_path, input_size, hidden_size, output_s
 
 if __name__ == "__main__":
     # Example usage
-    model_path = "/home/elia/Documents/rnnrep/TrainedModels/Fully_Connected/Seed 0/models/3HMM_3Outputs_triangular_30kData_0.001lr_1.9Loss.pth"
+    model_path = "TrainedModels/Fully_Connected/Seed 0/models/3HMM_3Outputs_triangular_30kData_0.001lr_1.9Loss.pth"
     input_size = 100
     hidden_size = 150
     output_size = 3
@@ -394,12 +394,12 @@ if __name__ == "__main__":
         input_size=input_size,
         hidden_size=hidden_size,
         output_size=output_size,
-        output_combinations=[[0, 1], [1, 2], [0, 2]],  # Analyze these combinations
+        output_combinations=[[0, 1], [1, 2], [0, 2]],
         variances=[0.1, 1.0, 2.0, 3.0, 4.0],
         steps=10000,
         time_steps_pca=100000,
         n_components_global=4,
-        pc_axes=(0, 2),  # PC1 vs PC3
+        pc_axes=(0, 2),
         save_dir='plots/variance/fully',
         bw_adjust=3.0,
         random_seed=42

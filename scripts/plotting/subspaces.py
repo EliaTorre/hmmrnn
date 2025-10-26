@@ -374,7 +374,7 @@ def run_pipeline(model_path, input_size, hidden_size, output_size,
 
 if __name__ == "__main__":
     # Example usage
-    model_path = "/home/elia/Documents/rnnrep/TrainedModels/Cyclic/Seed 0/models/4HMM_3Outputs_linear_30kData_0.001lr_5.5Loss.pth"
+    model_path = "TrainedModels/Cyclic/Seed 0/models/4HMM_3Outputs_linear_30kData_0.001lr_5.5Loss.pth"
     input_size = 100
     hidden_size = 150
     output_size = 3

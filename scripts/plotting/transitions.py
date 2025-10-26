@@ -331,7 +331,6 @@ def main(folder_path: str):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python transitions.py <folder_path>")
-        print("Example: python transitions.py /home/elia/Documents/rnnrep/TrainedModels/Cyclic")
         print("\nNote: Sequence length will be automatically read from config.json")
         sys.exit(1)
     

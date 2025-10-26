@@ -278,127 +278,6 @@ def plot_subspace_residency(h_pca, avg_steps, avg_sign_changes, num_unstable_lis
     plt.show()
     plt.close()
 
-def subspace_residency_plot(model_path, 
-                            output_combinations=None,
-                            sigma=1, 
-                            max_steps=50, 
-                            n_samples=20, 
-                            t0=20, 
-                            time_steps=100000,
-                            min_sequence_length=200,
-                            n_components_global=4,
-                            input_size=100,
-                            hidden_size=150,
-                            output_size=3,
-                            pc_dims=(0, 2)):
-    """
-    Generate residency plots for each output subspace.
-    
-    This function:
-    1. Generates hidden states for the entire trajectory
-    2. Computes ALL metrics once (residency time, sign changes, unstable eigenvalues)
-    3. Filters by output combination
-    4. Plots using the exact same logic as residency_plot
-    
-    Args:
-        model_path: Path to the saved model
-        output_combinations: List of output combinations (e.g., [[0,1], [1,2], [0,2]])
-        sigma: Standard deviation of input noise
-        max_steps: Maximum steps for residency computation
-        n_samples: Number of samples for residency computation
-        t0: Warm-up steps
-        time_steps: Total timesteps to generate
-        min_sequence_length: Minimum total points needed in subspace
-        n_components_global: Number of components for global PCA
-        input_size: Input dimension
-        hidden_size: Hidden state dimension
-        output_size: Output dimension
-        pc_dims: Tuple of PC indices to plot (default: (0, 2) for PC1 vs PC3)
-    """
-    if output_combinations is None:
-        output_combinations = [[0, 1], [1, 2], [0, 2]]
-    
-    print("=" * 60)
-    print("Starting subspace residency analysis")
-    print("=" * 60)
-    
-    # Step 1: Load model
-    print(f"\nLoading model from: {model_path}")
-    rnn = load_model_for_subspace(model_path, input_size, hidden_size, output_size)
-    
-    # Step 2: Generate hidden states and outputs
-    print(f"\nGenerating {time_steps} timesteps...")
-    h_sequence, outputs, ih, hh, fc, device = generate_hidden_states_with_outputs(
-        rnn, time_steps=time_steps, sigma=sigma, t0=t0
-    )
-    print(f"Generated {len(h_sequence)} hidden states")
-    print(f"Output distribution: {np.bincount(outputs)}")
-    
-    # Step 3: Compute ALL metrics ONCE (before filtering)
-    print(f"\nComputing metrics for all {len(h_sequence)} states...")
-    avg_steps, avg_sign_changes, num_unstable_list = compute_all_metrics(
-        h_sequence, ih, hh, fc, sigma, max_steps, n_samples, device
-    )
-    
-    # Step 4: Compute global PCA
-    print(f"\nComputing global PCA with {n_components_global} components...")
-    h_np = h_sequence.cpu().numpy()
-    pca_global = PCA(n_components=n_components_global)
-    h_pca_global = pca_global.fit_transform(h_np)
-    print(f"Global PCA explained variance: {pca_global.explained_variance_ratio_}")
-    
-    # Step 5: Process each output combination
-    for output_set in output_combinations:
-        print("\n" + "=" * 60)
-        print(f"Processing subspace for outputs {output_set}")
-        print("=" * 60)
-        
-        # Filter sequences and pre-computed metrics
-        result = filter_by_output_combination(
-            h_sequence, outputs, avg_steps, avg_sign_changes, 
-            num_unstable_list, h_pca_global, output_set, min_length=min_sequence_length
-        )
-        
-        if result[0] is None:
-            print(f"No sufficient data found for outputs {output_set}. Skipping.")
-            continue
-        
-        (filtered_h, filtered_outputs, filtered_avg_steps, 
-         filtered_avg_sign_changes, filtered_num_unstable, filtered_h_global_pca) = result
-        
-        T = len(filtered_h)
-        print(f"Using {T} states in subspace")
-        
-        # Apply subspace-specific PCA (need at least 3 components for PC1 vs PC3)
-        n_pca_components = max(3, pc_dims[0] + 1, pc_dims[1] + 1)
-        n_pca_components = min(n_pca_components, filtered_h_global_pca.shape[1], filtered_h_global_pca.shape[0])
-        
-        print(f"Computing subspace PCA with {n_pca_components} components...")
-        pca_subspace = PCA(n_components=n_pca_components)
-        h_pca = pca_subspace.fit_transform(filtered_h_global_pca)
-        print(f"Subspace PCA explained variance: {pca_subspace.explained_variance_ratio_}")
-        
-        # Plot using the exact same logic as residency_plot
-        print("Creating plot...")
-        plot_subspace_residency(
-            h_pca, filtered_avg_steps, filtered_avg_sign_changes, 
-            filtered_num_unstable, fc, filtered_h, output_set, model_path, pc_dims=pc_dims
-        )
-    
-    print("\n" + "=" * 60)
-    print("Subspace residency analysis completed!")
-    print("=" * 60)
-
-
-
-
-
-
-
-
-
-
-
 def load_model_for_subspace(model_path, input_size=100, hidden_size=150, output_size=3):
     """Load RNN model and extract weights."""
     rnn = RNN(input_size=input_size, hidden_size=hidden_size, num_layers=1, output_size=output_size)
@@ -515,7 +394,7 @@ def compute_unstable_eigenvalues(h, ih, hh, device):
     num_unstable = (mobius.real > 0).sum().item()
     return num_unstable
 
-def subspace_residency_plotv2(model_path, 
+def subspace_residency_plot(model_path, 
                             output_combinations=None,
                             sigma=1, 
                             max_steps=50, 

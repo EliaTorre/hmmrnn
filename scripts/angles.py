@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from sklearn.decomposition import PCA
-from scripts.rnn import RNN
+from rnn import RNN
 
 def angles(model_path=None, timesteps=5000):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -135,18 +135,18 @@ def angles(model_path=None, timesteps=5000):
     }
 
 # %%
-models=["/home/elia/Documents/rnnrep/TrainedModels/ReverseEngineeredModel/2HMM_3Outputs_linear_30kData_0.001lr_10.0Loss.pth", # 2 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Two/hidden_150/input_100/seed_0/models/2HMM_3Outputs_linear_30kData_0.001lr_10.0Loss.pth", # 2 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Two/hidden_150/input_100/seed_1/models/2HMM_3Outputs_linear_30kData_0.001lr_9.8Loss.pth", # 2 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Three/hidden_150/input_100/seed_0/models/3HMM_3Outputs_linear_30kData_0.001lr_4.1Loss.pth", # 3 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Three/hidden_150/input_100/seed_1/models/3HMM_3Outputs_linear_30kData_0.001lr_4.1Loss.pth", # 3 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Three/hidden_150/input_100/seed_2/models/3HMM_3Outputs_linear_30kData_0.001lr_4.1Loss.pth", # 3 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Four/hidden_150/input_100/seed_0/models/4HMM_3Outputs_linear_30kData_0.001lr_4.6Loss.pth", # 4 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Four/hidden_150/input_100/seed_1/models/4HMM_3Outputs_linear_30kData_0.001lr_4.6Loss.pth", # 4 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Four/hidden_150/input_100/seed_2/models/4HMM_3Outputs_linear_30kData_0.001lr_4.7Loss.pth", # 4 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Five/hidden_150/input_100/seed_0/models/5HMM_3Outputs_linear_30kData_0.001lr_7.8Loss.pth", # 5 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Five/hidden_150/input_100/seed_1/models/5HMM_3Outputs_linear_30kData_0.001lr_7.7Loss.pth", # 5 States
-        "/home/elia/Documents/rnnrep/TrainedModels/Five/hidden_150/input_100/seed_2/models/5HMM_3Outputs_linear_30kData_0.001lr_7.6Loss.pth" # 5 States
+models=["TrainedModels/ReverseEngineeredModel/2HMM_3Outputs_linear_30kData_0.001lr_10.0Loss.pth", # 2 States
+        "TrainedModels/Two/hidden_150/input_100/seed_0/models/2HMM_3Outputs_linear_30kData_0.001lr_10.0Loss.pth", # 2 States
+        "TrainedModels/Two/hidden_150/input_100/seed_1/models/2HMM_3Outputs_linear_30kData_0.001lr_9.8Loss.pth", # 2 States
+        "TrainedModels/Three/hidden_150/input_100/seed_0/models/3HMM_3Outputs_linear_30kData_0.001lr_4.1Loss.pth", # 3 States
+        "TrainedModels/Three/hidden_150/input_100/seed_1/models/3HMM_3Outputs_linear_30kData_0.001lr_4.1Loss.pth", # 3 States
+        "TrainedModels/Three/hidden_150/input_100/seed_2/models/3HMM_3Outputs_linear_30kData_0.001lr_4.1Loss.pth", # 3 States
+        "TrainedModels/Four/hidden_150/input_100/seed_0/models/4HMM_3Outputs_linear_30kData_0.001lr_4.6Loss.pth", # 4 States
+        "TrainedModels/Four/hidden_150/input_100/seed_1/models/4HMM_3Outputs_linear_30kData_0.001lr_4.6Loss.pth", # 4 States
+        "TrainedModels/Four/hidden_150/input_100/seed_2/models/4HMM_3Outputs_linear_30kData_0.001lr_4.7Loss.pth", # 4 States
+        "TrainedModels/Five/hidden_150/input_100/seed_0/models/5HMM_3Outputs_linear_30kData_0.001lr_7.8Loss.pth", # 5 States
+        "TrainedModels/Five/hidden_150/input_100/seed_1/models/5HMM_3Outputs_linear_30kData_0.001lr_7.7Loss.pth", # 5 States
+        "TrainedModels/Five/hidden_150/input_100/seed_2/models/5HMM_3Outputs_linear_30kData_0.001lr_7.6Loss.pth" # 5 States
         ]
 
 projections = []
@@ -201,5 +201,6 @@ ax.legend()
 plt.title('RNN Readouts Projections on PCA plane vs # States', 
           fontsize=14, fontweight='bold')
 plt.tight_layout()
+plt.savefig('angles_readout_pc_plane.svg', format='svg')
 plt.show()
 # %%

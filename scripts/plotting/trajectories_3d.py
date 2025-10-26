@@ -393,7 +393,7 @@ def run_pipeline_3d(model_path, input_size, hidden_size,
 
 if __name__ == "__main__":
     # Example usage
-    model_path = "/home/elia/Documents/rnnrep/TrainedModels/Fully_Connected/Seed 0/models/3HMM_3Outputs_triangular_30kData_0.001lr_1.9Loss.pth"
+    model_path = "TrainedModels/Fully_Connected/Seed 0/models/3HMM_3Outputs_triangular_30kData_0.001lr_1.9Loss.pth"
     input_size = 100
     hidden_size = 150
     
