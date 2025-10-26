@@ -48,18 +48,20 @@ The repository is organized as follows:
 2. Follow the step-by-step instructions to run the analysis
 
 ### TrainedModels Folder
-The `TrainedModels` folder contains pre-trained models organized by HMM complexity. After downloading the models, place them in the repository root directory. The structure is as follows:
+The `TrainedModels` folder contains pre-trained models organized by HMM complexity and topology. After downloading the models, place them in the repository root directory. The structure is as follows:
 
-- `Two/`: Models trained on 2-state HMMs
+- `Two/`: Models trained on 2-state linear-chain HMMs
   - `hidden_50/`, `hidden_150/`, `hidden_200/`: Different hidden layer sizes
     - `input_1/`, `input_10/`, `input_100/`, `input_200/`: Different input dimensions
       - `seed_0/`, `seed_1/`, `seed_2/`: Different random seeds
         - `models/`: Trained model files
         - `config.json`: Containing metadata about RNN and HMM models
 
-- `Three/`: Models trained on 3-state HMMs (same subfolder structure as `Two/`)
-- `Four/`: Models trained on 4-state HMMs (same subfolder structure as `Two/`)
-- `Five/`: Models trained on 5-state HMMs (same subfolder structure as `Two/`)
+- `Three/`: Models trained on 3-state linear-chain HMMs (same subfolder structure as `Two/`)
+- `Four/`: Models trained on 4-state linear-chain HMMs (same subfolder structure as `Two/`)
+- `Five/`: Models trained on 5-state linear-chain HMMs (same subfolder structure as `Two/`)
+- `FullyConnected/`: Models trained on fully-connected HMM topologies
+- `Cyclic/`: Models trained on cyclic HMM topologies
 - `ReverseEngineeredModel/`: Contains the main RNN model used for detailed reverse engineering analysis at the single-neuron level
 
 ## Scripts
@@ -78,6 +80,7 @@ A Jupyter notebook that serves as a step-by-step guide to run all the functions 
 Configuration module for HMM-RNN experiments. Defines different configuration classes:
 - `DefaultConfig`: Base configuration with default parameters
 - `HMMTwo`, `HMMThree`, `HMMFour`, `HMMFive`: Configurations for linear-chain HMMs used in the paper
+- Additional configurations for fully-connected and cyclic HMM topologies
 
 ### hmm.py
 

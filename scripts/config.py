@@ -173,56 +173,7 @@ class HMMFive(DefaultConfig):
         "seq_len": 40
     }
 
-class HMMThreeCycle(DefaultConfig):
-    HMM = {
-        "states": 3,
-        "outputs": 3,
-        "stay_prob": 0.99,
-        "target_prob": 0.01,
-        "transition_method": "fully",
-        "emission_method": "linear"
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 1500,
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.4,
-        "init": False,
-        "weight_decay": 0
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 35
-    }
-
-class HMMThreeTriangular(DefaultConfig):
-    HMM = {
-        "states": 3,
-        "outputs": 3,
-        "stay_prob": 0.95,
-        "target_prob": 0.05,
-        "transition_method": "target_prob",
-        "emission_method": "triangular"
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 500,
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": False
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 30
-    }
-
-class HMMThreeTriangularFully(DefaultConfig):
+class HMMFully(DefaultConfig):
     HMM = {
         "states": 3,
         "outputs": 3,
@@ -247,90 +198,8 @@ class HMMThreeTriangularFully(DefaultConfig):
         "seq_len": 30
     }
 
-class HMMReview2(DefaultConfig):
-    HMM = {
-        "states": 2,
-        "outputs": 2,
-        "stay_prob": 0.95,
-        "target_prob": 0.05,
-        "transition_method": "target_prob",
-        "emission_method": "linear",
-        "custom_emission_matrix": [[1.0, 0.0], [0.0, 1.0]],
-    }
 
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 500,
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": False,
-        "weight_decay": 0 
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 120
-    }
-
-class HMMReview(DefaultConfig):
-    HMM = {
-        "states": 4,
-        "outputs": 3,
-        "stay_prob": 0.95,
-        "target_prob": 0.05,
-        "transition_method": "target_prob",
-        "emission_method": "linear",
-        "custom_transition_matrix": [[0.94, 0.02, 0.02, 0.02], [0.02, 0.94, 0.02, 0.02], [0.02, 0.02, 0.94, 0.02], [0.02, 0.02, 0.02, 0.94]],
-        "custom_emission_matrix": [[1, 0.0, 0.0, 0.0], [0.0, 1, 0.0, 0.0], [0.0, 0.0, 1, 0.0], [0.0, 0.0, 0.0, 1]],
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 500,
-        "hidden_size": 150,
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": False,
-        "weight_decay": 0 
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 30
-    }
-
-class HMMCycle4(DefaultConfig):
-    HMM = {
-        "states": 4,
-        "outputs": 3,
-        "stay_prob": 0.95,
-        "target_prob": 0.05,
-        "transition_method": "target_prob",
-        "emission_method": "linear",
-        "custom_transition_matrix": [[0.9, 0.05, 0.0, 0.05], [0.05, 0.9, 0.05, 0.0], [0.0, 0.05, 0.9, 0.05], [0.05, 0.0, 0.05, 0.9]],
-        #'custom_transition_matrix': [[0.5, 0.25, 0.0, 0.0, 0.25], [0.25, 0.5, 0.25, 0.0, 0.0], [0.0, 0.25, 0.5, 0.25, 0.0], [0.0, 0.0, 0.25, 0.5, 0.25], [0.25, 0.0, 0.0, 0.25, 0.5]],
-        "custom_emission_matrix": [[1, 0, 0], [0.6, 0, 0.4], [0, 0, 1], [0.4, 0, 0.6]],
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 500,
-        "hidden_size": 150,
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": False,
-        "weight_decay": 0 
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 30
-    }
-
-class pisellino4(DefaultConfig):
+class HMMCyclic(DefaultConfig):
     HMM = {
         "states": 4,
         "outputs": 3,
@@ -357,56 +226,4 @@ class pisellino4(DefaultConfig):
     DATA = {
         "num_seq": 30000,
         "seq_len": 40
-    }
-
-class HMMReview4(DefaultConfig):
-    HMM = {
-        "states": 2,
-        "outputs": 3,
-        "stay_prob": 0.85,
-        "target_prob": 0.15,
-        "transition_method": "target_prob",
-        "emission_method": "linear"
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 500, 
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": False,
-        "weight_decay": 0 
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 50
-    }
-
-class HMMReview4_pretrained(DefaultConfig):
-    HMM = {
-        "states": 2,
-        "outputs": 3,
-        "stay_prob": 0.85,
-        "target_prob": 0.15,
-        "transition_method": "target_prob",
-        "emission_method": "linear"
-    }
-
-    TRAINING = {
-        "batch_size": 4096,
-        "epochs": 100, 
-        "learning_rates": [0.001],
-        "tau": 1.0,
-        "grad_clip": 0.9,
-        "init": False,
-        "weight_decay": 0,
-        "pretrained_model_path": "TrainedModels/ReverseEngineeredModel/2HMM_3Outputs_linear_30kData_0.001lr_10.0Loss.pth"
-
-    }
-
-    DATA = {
-        "num_seq": 30000,
-        "seq_len": 50
     }
