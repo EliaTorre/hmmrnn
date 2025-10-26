@@ -38,7 +38,7 @@ The repository is organized as follows:
     - `transitions.py`, `euclidean.py`: Transition and distance plots
     - `subspaces.py`, `variance_subspaces.py`: Subspace analysis
     - `subspace_residency.py`, `variance.py`: Residency and variance plots
-- `TrainedModels/`: Pre-trained RNN models (downloadable from https://drive.google.com/file/d/1qsSK-hI2xw8pl24dYlXN6ssa_0qAUFpL/view?usp=sharing)
+- `TrainedModels/`: Pre-trained RNN models
 - `main.ipynb`: Jupyter notebook with step-by-step guide to run all functions
 
 ## Usage
