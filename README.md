@@ -2,7 +2,7 @@
 
 ![Header image](pipe.svg)
 
-This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). The project focuses on understanding the internal representations of RNNs from the global dynamical properties down to the single-neuron level mechanism. 
+This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). This code reverse-engineers internal representations of RNNs from the global dynamical properties down to the single-neuron level mechanism. 
 
 ## Installation
 
