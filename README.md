@@ -57,9 +57,9 @@ The `TrainedModels` folder contains pre-trained models organized by HMM complexi
         - `models/`: Trained model files
         - `config.json`: Containing metadata about RNN and HMM models
 
-- `Three/`: Models trained on 3-state linear-chain HMMs (same subfolder structure as `Two/`)
-- `Four/`: Models trained on 4-state linear-chain HMMs (same subfolder structure as `Two/`)
-- `Five/`: Models trained on 5-state linear-chain HMMs (same subfolder structure as `Two/`)
+- `Three/`: Models trained on 3-state linear-chain HMMs
+- `Four/`: Models trained on 4-state linear-chain HMMs
+- `Five/`: Models trained on 5-state linear-chain HMMs
 - `FullyConnected/`: Models trained on fully-connected HMM topologies
 - `Cyclic/`: Models trained on cyclic HMM topologies
 - `ReverseEngineeredModel/`: Contains the main RNN model used for detailed reverse engineering analysis at the single-neuron level
