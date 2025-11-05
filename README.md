@@ -4,6 +4,20 @@
 
 This repository contains code for training, analyzing, and reverse engineering Recurrent Neural Networks (RNNs) trained on data generated from Hidden Markov Models (HMMs). This code reverse-engineers internal representations of RNNs from the global dynamical properties down to the single-neuron level mechanism. 
 
+## Citation
+If you use this code in your research, please cite our paper:
+
+[Torre, E., Viscione, M., Pompe, L., Grewe, B. F., & Mante, V. (2025). *Mechanistic Interpretability of RNNs emulating Hidden Markov Models.* arXiv preprint arXiv:2510.25674.](https://arxiv.org/abs/2510.25674)
+
+```bibtex
+@article{torre2025mechanistic,
+  title   = {Mechanistic Interpretability of RNNs emulating Hidden Markov Models},
+  author  = {Torre, Elia and Viscione, Michele and Pompe, Lucas and Grewe, Benjamin F and Mante, Valerio},
+  journal = {arXiv preprint arXiv:2510.25674},
+  year    = {2025}
+}
+```
+
 ## Installation
 ### Requirements
 Install the required packages using pip:
@@ -93,7 +107,3 @@ Implements state-space analysis and visualization tools including trajectory gen
 
 ### mechint.py
 Implements mechanistic interpretability tools for analyzing RNN dynamics at population and single-neuron levels through residency time, noise sensitivity, and ablation studies.
-
-
-## Citation
-If you use this code in your research, please cite the associated publication.
